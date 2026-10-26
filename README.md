@@ -39,7 +39,7 @@ ohranijo).
 | 📊 **LED peak meter** | 30-segmentni merilnik ravni z barvnimi conami (zelena → rumena → rdeča) in kratkim zadržanjem vrha. |
 | 🔇 **Okrogli gumbi za utišanje** | Zeleno jedro = zvok aktiven, rdeče = utišano; moder obroč v barvi `MASTER`. |
 | ✏️ **Preimenovanje** | Dvojni klik na ime (ali svinčnik) odpre vnos; ime se shrani trajno. |
-| 🎧 **Aplikacije** | Spodnja plošča sproti prikazuje programe, ki trenutno predvajajo zvok; vsakega lahko pošlješ na drug izhod. |
+| 🎧 **Aplikacije** | Spodnja plošča sproti prikazuje programe, ki trenutno predvajajo zvok; aplikacijo preprosto povlečeš na želen kanal. |
 | 🔄 **Osveži naprave** | Znova prebere seznam naprav (npr. po priklopu USB slušalk) – brez podvajanja kartic. |
 | 🎨 **Temna tema** | Lasten videz: zaobljene kartice, kovinski pravokotni drsniki, mehki prelivi, anti-aliasing prek Pillow. |
 
@@ -49,6 +49,8 @@ ohranijo).
 - **Odstotek** – klik na vrednost nastavi 100 %.
 - **Utišaj** – klik na okrogli gumb.
 - **Ime** – dvojni klik za preimenovanje, `Enter` potrdi, `Esc` prekliče.
+- **Aplikacija** – povleci jo s plošče na kanal (glej spodaj); klik na gumb
+  odpre seznam naprav.
 
 ### Usmerjanje aplikacij
 
@@ -57,13 +59,21 @@ trenutno odprt zvočni tok (brskalnik, predvajalnik, igra …). Plošča se osve
 sama in se ne podvaja.
 
 1. Zaženi predvajanje v aplikaciji, ki jo želiš premakniti.
-2. Klikni gumb z imenom naprave v vrstici aplikacije (privzeto `SISTEMSKO`).
-3. Izberi izhod – `Sistemsko privzeto` ali katero od aktivnih izhodnih naprav.
-4. Statusna vrstica potrdi premik (`msedge → DIGITAL OUTPUT`); gumb pokaže
-   izbrano napravo.
+2. Primi vrstico aplikacije (pika za prijem na levi ali ime) in jo **povleci
+   na kanal**, kjer naj se predvaja.
+3. Med vlečenjem se vsi izhodni kanali obarvajo, ciljni pa je poudarjen; ob
+   kazalcu se izpiše trenutna tarča (`→ DIGITAL OUTPUT`).
+4. Spusti – statusna vrstica potrdi premik (`msedge → DIGITAL OUTPUT`), gumb v
+   vrstici pa pokaže izbrano napravo.
 
-Izbira se shrani v Windows in velja tudi po ponovnem zagonu aplikacije. Za
-vrnitev na sistemsko privzeto izberi **Sistemsko privzeto**.
+Namesto vlečenja lahko **klikneš gumb z imenom naprave** v vrstici aplikacije
+(privzeto `SISTEMSKO`) in izbereš izhod s seznama – `Sistemsko privzeto` ali
+katero od aktivnih izhodnih naprav. To je priročno, kadar želiš natančno izbrati
+napravo z dolgim imenom.
+
+Spust na **MASTER** (»Vsi izhodni kanali«) pomeni **sistemsko privzeto** – isto
+kot izbira `Sistemsko privzeto` na seznamu. Izbira se shrani v Windows in velja
+tudi po ponovnem zagonu aplikacije.
 
 > **Namig:** Windows izbiro uporabi, ko aplikacija odpre **nov zvočni tok**.
 > V praksi to pomeni, da je treba predvajanje pogosto ustaviti in znova zagnati

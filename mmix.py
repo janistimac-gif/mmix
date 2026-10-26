@@ -81,6 +81,10 @@ def mix(c1, c2, t):
     return '#%02x%02x%02x' % tuple(round(x + (y - x) * t) for x, y in zip(a, b))
 
 
+# Obroba kanalov med vlečenjem aplikacije: 1 = možna tarča, 2 = izbrana tarča.
+DROP_HINT = mix(ACCENT, CARD_EDGE, 0.45)
+
+
 # Kovinski videz drsnikov: temen rob -> svetlina -> temen rob (žleb)
 # oz. svetlo zgoraj -> temno spodaj (ročaj).
 STEEL_EDGE = '#0b0e13'
@@ -654,6 +658,7 @@ class RoundedCard(tk.Canvas):
         super().__init__(parent, bg=BG, highlightthickness=0, bd=0)
         self.accent = accent
         self.fill = fill
+        self.highlight = 0
         self._size = None
         self.group = group if group is not None else []
         self.group.append(self)
@@ -673,6 +678,16 @@ class RoundedCard(tk.Canvas):
         for c in members:
             c.apply(w, h)
 
+    def set_highlight(self, level=0):
+        """0 = običajno, 1 = možna tarča, 2 = tarča pod kazalcem."""
+        if level == self.highlight:
+            return
+        self.highlight = level
+        if self._size:
+            w, h = self._size
+            self._size = None
+            self.apply(w, h)
+
     def apply(self, w, h):
         if self._size == (w, h):
             return
@@ -683,10 +698,22 @@ class RoundedCard(tk.Canvas):
         x0, y0, x1, y1, r = 1, 1, w - 1, h - 1, self.RADIUS
         pts = [x0 + r, y0, x1 - r, y0, x1, y0, x1, y0 + r, x1, y1 - r, x1, y1,
                x1 - r, y1, x0 + r, y1, x0, y1, x0, y1 - r, x0, y0 + r, x0, y0]
+        if self.highlight >= 2:
+            outline, width = ACCENT, 2
+        elif self.highlight == 1:
+            outline, width = DROP_HINT, 1
+        elif self.accent:
+            outline, width = mix(ACCENT, self.fill, 0.25), 2
+        else:
+            outline, width = CARD_EDGE, 1
         self.create_polygon(pts, smooth=True, fill=self.fill, tags='bg',
-                            outline=mix(ACCENT, self.fill, 0.25) if self.accent else CARD_EDGE,
-                            width=2 if self.accent else 1)
-        sheen = mix(ACCENT, self.fill, 0.45) if self.accent else mix(self.fill, '#ffffff', 0.07)
+                            outline=outline, width=width)
+        if self.highlight >= 2:
+            sheen = ACCENT
+        elif self.accent:
+            sheen = mix(ACCENT, self.fill, 0.45)
+        else:
+            sheen = mix(self.fill, '#ffffff', 0.07)
         self.create_line(x0 + r, y0 + 2, x1 - r, y0 + 2, fill=sheen, tags='bg')
         self.tag_lower('bg')
 
@@ -930,39 +957,73 @@ APPS_COLS = 6
 
 
 class AppChip:
-    """Ena aplikacija v spodnji plošči: ime procesa + gumb za izbiro izhoda."""
+    """Ena aplikacija v spodnji plošči: povleci jo na kanal ali klikni gumb."""
 
-    def __init__(self, parent, app, route_text, on_pick):
+    def __init__(self, parent, app, route_text, on_pick, panel=None):
         self.app = app
+        self.panel = panel
         self.card = RoundedCard(parent, group=[], fill=CHIP_FILL, radius=11,
                                 auto=False)
         self.card.apply(CHIP_W, CHIP_H)
         body = self.card.inner
+        head = tk.Frame(body, bg=CHIP_FILL)
+        head.pack(fill='x', padx=2)
+        self.grip = tk.Canvas(head, width=10, height=16, bg=CHIP_FILL,
+                              highlightthickness=0, bd=0, cursor='fleur')
+        for row in range(3):
+            for col in range(2):
+                self.grip.create_oval(2 + col * 4, 3 + row * 4,
+                                      4 + col * 4, 5 + row * 4,
+                                      fill=SUBTEXT2, outline='')
+        self.grip.pack(side='left', padx=(0, 4))
         name = app['name']
         if len(name) > 20:
             name = name[:19].rstrip() + '\u2026'
-        self.name = tk.Label(body, text=name, bg=CHIP_FILL, fg=TEXT,
-                             font=F(9, 'bold'), anchor='w')
-        self.name.pack(fill='x', padx=2)
+        self.name = tk.Label(head, text=name, bg=CHIP_FILL, fg=TEXT,
+                             font=F(9, 'bold'), anchor='w', cursor='fleur')
+        self.name.pack(side='left', fill='x', expand=True)
         self.button = PillButton(
             body, route_text, lambda: on_pick(self), ACCENT, ACCENT_HOVER,
             fg=ACCENT, fg_hover='#e8f7ff', width=CHIP_W - 28, height=21,
             font=F(8, 'bold'), parent_bg=CHIP_FILL, ghost=True, radius=7)
         self.button.pack(pady=(3, 0))
 
+        for widget in (self.card, body, head, self.grip, self.name):
+            widget.bind('<ButtonPress-1>', self._press)
+            widget.bind('<B1-Motion>', self._motion)
+            widget.bind('<ButtonRelease-1>', self._release)
+
+    # -- vlečenje na kanal ------------------------------------------------
+    def _press(self, event):
+        if self.panel is not None:
+            self.panel.drag_start(self, event)
+        return 'break'
+
+    def _motion(self, event):
+        if self.panel is not None:
+            self.panel.drag_move(event)
+        return 'break'
+
+    def _release(self, event):
+        if self.panel is not None:
+            self.panel.drag_end(event)
+        return 'break'
+
 
 class AppsPanel:
     """Plošča pod napravami: katere aplikacije predvajajo zvok in kam."""
 
-    def __init__(self, parent, router, devices):
+    def __init__(self, parent, router, devices, columns=()):
         self.router = router
         self.devices = list(devices)
+        self._columns = list(columns)
         self._apps = {}
         self._sig = None
         self.chips = []
         self._cols = APPS_COLS
         self._width = 0
         self._menu = None
+        self._drag = None
         self._status_job = None
         self._empty = 0
         self.shell = RoundedCard(parent, group=[], auto=False)
@@ -983,8 +1044,8 @@ class AppsPanel:
         self.grid = tk.Frame(host, bg=CARD)
         self.grid.pack(fill='x', padx=10, pady=(5, 0))
         self.hint = tk.Label(
-            host, text='Namig: pri nekaterih aplikacijah premik velja ob '
-                       'naslednjem predvajanju.',
+            host, text='Povleci aplikacijo na kanal · klik na gumb odpre seznam '
+                       '· MASTER pomeni sistemsko privzeto',
             bg=CARD, fg=SUBTEXT2, font=F(8), anchor='w')
         self.hint.pack(fill='x', padx=14, pady=(3, 6))
 
@@ -1005,6 +1066,12 @@ class AppsPanel:
             self.devices = list(devices)
             self._sig = None
 
+    def set_columns(self, columns):
+        if self._drag:
+            self.drag_cancel()
+        self._columns = [c for c in columns if getattr(c, 'shell', None)]
+        self._sig = None
+
     def device_name(self, dev_id):
         for did, name in self.devices:
             if did == dev_id:
@@ -1020,7 +1087,7 @@ class AppsPanel:
 
     # -- vsebina ----------------------------------------------------------
     def refresh(self, force=False):
-        if self._menu is not None and not force:
+        if (self._menu is not None or self._drag is not None) and not force:
             return
         apps = list_audio_apps(self.router, skip_pids={os.getpid()})
         if not apps and self._apps:
@@ -1049,7 +1116,8 @@ class AppsPanel:
             rows = 1
         else:
             for index, app in enumerate(chips):
-                chip = AppChip(self.grid, app, self.route_text(app), self.open_menu)
+                chip = AppChip(self.grid, app, self.route_text(app),
+                               self.open_menu, self)
                 chip.card.grid(row=index // self._cols, column=index % self._cols,
                                padx=3, pady=3)
                 self.chips.append(chip)
@@ -1069,6 +1137,158 @@ class AppsPanel:
         if text:
             self._status_job = self.status.after(
                 7000, lambda: self.status.config(text=''))
+
+    # -- vlečenje aplikacije na kanal -------------------------------------
+    def _drop_columns(self):
+        cols = []
+        for col in self._columns:
+            shell = getattr(col, 'shell', None)
+            if shell is None or getattr(col, 'direction', None) != 'Izhod':
+                continue
+            cols.append(col)
+        return cols
+
+    def _target_at(self, x_root, y_root):
+        for col in self._drop_columns():
+            shell = col.shell
+            try:
+                x0, y0 = shell.winfo_rootx(), shell.winfo_rooty()
+                if (x0 <= x_root <= x0 + shell.winfo_width() and
+                        y0 <= y_root <= y0 + shell.winfo_height()):
+                    return col
+            except tk.TclError:
+                continue
+        return None
+
+    def _target_text(self, col):
+        if col is None:
+            return 'izberi kanal'
+        if getattr(col, 'is_master', False):
+            return 'SISTEMSKO'
+        return short_menu_name(getattr(col, 'full_name', 'kanal'))
+
+    def _highlight(self, active=None):
+        for col in self._drop_columns():
+            col.shell.set_highlight(2 if col is active else 1)
+
+    def _clear_highlights(self):
+        for col in self._columns:
+            shell = getattr(col, 'shell', None)
+            if shell is None:
+                continue
+            try:
+                shell.set_highlight(0)
+            except tk.TclError:
+                pass
+
+    def drag_start(self, chip, event):
+        self.close_menu()
+        if not self.router.ok:
+            self.set_status('Usmerjanje ni podprto na tem sistemu', YELLOW)
+            return
+        self.drag_cancel()
+        self._drag = {'app': chip.app, 'x': event.x_root, 'y': event.y_root,
+                      'active': False, 'target': None, 'ghost': None,
+                      'arrow': None}
+
+    def drag_move(self, event):
+        drag = self._drag
+        if drag is None:
+            return
+        if not drag['active']:
+            if (abs(event.x_root - drag['x']) < 6 and
+                    abs(event.y_root - drag['y']) < 6):
+                return
+            self._begin_ghost(drag)
+        self._move_ghost(drag, event)
+        target = self._target_at(event.x_root, event.y_root)
+        if target is not drag['target']:
+            drag['target'] = target
+            self._highlight(target)
+            if drag['arrow'] is not None:
+                drag['arrow'].config(text='\u2192 ' + self._target_text(target))
+            if target is None:
+                self.set_status('Spusti na kanal z izhodno napravo', SUBTEXT)
+            else:
+                self.set_status('Spusti na ' + self._target_text(target), ACCENT)
+
+    def drag_end(self, event):
+        drag = self._drag
+        if drag is None:
+            return
+        self._drag = None
+        target = drag['target']
+        if drag['active']:
+            target = self._target_at(event.x_root, event.y_root)
+        self._drop_ghost(drag)
+        self._clear_highlights()
+        if not drag['active']:
+            return
+        if target is None:
+            self.set_status('Premik preklican – spusti na kanal', SUBTEXT)
+            self.refresh(force=True)
+            return
+        self.apply(drag['app'],
+                   None if getattr(target, 'is_master', False) else target.key)
+
+    def drag_cancel(self):
+        drag = self._drag
+        self._drag = None
+        if drag is not None:
+            self._drop_ghost(drag)
+        self._clear_highlights()
+
+    def _begin_ghost(self, drag):
+        win = tk.Toplevel(self.shell)
+        win.withdraw()
+        win.overrideredirect(True)
+        win.configure(bg=BG)
+        try:
+            win.attributes('-topmost', True)
+            win.attributes('-alpha', 0.96)
+        except Exception:
+            pass
+        card = RoundedCard(win, group=[], fill=CHIP_FILL, radius=10, auto=False)
+        card.pack()
+        card.apply(238, 50)
+        name = drag['app']['name']
+        if len(name) > 26:
+            name = name[:25].rstrip() + '\u2026'
+        tk.Label(card.inner, text=name, bg=CHIP_FILL, fg=TEXT,
+                 font=F(9, 'bold'), anchor='w').pack(fill='x', padx=2)
+        arrow = tk.Label(card.inner, text='\u2192 izberi kanal', bg=CHIP_FILL,
+                         fg=ACCENT, font=F(8, 'bold'), anchor='w')
+        arrow.pack(fill='x', padx=2, pady=(1, 0))
+        drag['ghost'] = win
+        drag['arrow'] = arrow
+        drag['active'] = True
+        x = drag['x'] + 16
+        y = drag['y'] + 14
+        win.geometry(f'+{x}+{y}')
+        win.deiconify()
+        win.lift()
+        self._highlight(drag['target'])
+        self.set_status('Spusti na kanal z izhodno napravo', SUBTEXT)
+
+    def _move_ghost(self, drag, event):
+        win = drag['ghost']
+        if win is None:
+            return
+        x = event.x_root + 16 if event is not None else drag['x'] + 16
+        y = event.y_root + 14 if event is not None else drag['y'] + 14
+        x = max(8, min(x, win.winfo_screenwidth() - 246))
+        y = max(8, min(y, win.winfo_screenheight() - 58))
+        win.geometry(f'+{x}+{y}')
+
+    def _drop_ghost(self, drag):
+        win = drag.get('ghost')
+        drag['ghost'] = None
+        drag['arrow'] = None
+        if win is not None:
+            try:
+                win.destroy()
+            except tk.TclError:
+                pass
 
     # -- izbira naprave ---------------------------------------------------
     def open_menu(self, chip):
@@ -1211,6 +1431,7 @@ class DeviceColumn(tk.Frame):
         super().__init__(parent, bg=CARD, padx=4, pady=4)
         self.shell = None
         self.is_master = master
+        self.direction = direction
         self.key = key
         self.names = names
         self.default_name = name
@@ -1745,6 +1966,8 @@ class App(tk.Tk):
             col.pack(fill='both', expand=True)
             shell.pack(side='left', padx=5, pady=4)
             self.columns.append(col)
+        if self.apps_panel is not None:
+            self.apps_panel.set_columns(self.columns)
         self.sync_apps_panel()
 
     def output_devices(self):
@@ -1757,10 +1980,12 @@ class App(tk.Tk):
     def sync_apps_panel(self):
         devices = self.output_devices()
         if self.apps_panel is None:
-            self.apps_panel = AppsPanel(self.content, self.router, devices)
+            self.apps_panel = AppsPanel(self.content, self.router, devices,
+                                        self.columns)
             self.apps_panel.shell.pack(pady=(6, 0))
         else:
             self.apps_panel.set_devices(devices)
+            self.apps_panel.set_columns(self.columns)
         self.update_idletasks()
         self.apps_panel.resize(self.holder.winfo_reqwidth())
         if self._apps_timer is None:
