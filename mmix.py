@@ -1,0 +1,1288 @@
+"""
+mmix - sodoben temen mešalnik glasnosti za vse aktivne avdio naprave (Windows).
+Pokončni drsniki z gradientnim polnilom in LED peak meterjem, master kanal,
+preimenovanje kanalov, ikona aplikacije in (izbirno) brezrobno okno z neonskim
+okvirjem (mapa frame/, glej build_frame.py).
+
+Namestitev:
+    pip install pycaw comtypes
+
+Zagon:
+    python volume_mixer.py
+"""
+import json
+import math
+import os
+import sys
+import tkinter as tk
+from ctypes import POINTER, cast
+
+import comtypes
+from comtypes import CLSCTX_ALL
+from pycaw.constants import CLSID_MMDeviceEnumerator
+from pycaw.api.endpointvolume import IAudioEndpointVolume, IAudioMeterInformation
+from pycaw.api.mmdeviceapi import IMMDeviceEnumerator
+from pycaw.pycaw import AudioUtilities
+
+E_RENDER = 0
+E_CAPTURE = 1
+STATE_ACTIVE = 1
+
+FONT = 'Segoe UI'
+
+
+def F(size, weight=''):
+    """Pisava v pikslih (negativna velikost), da videz ne skače pri DPI skaliranju."""
+    px = -max(1, round(size * 4 / 3))
+    if weight:
+        return (FONT, px, weight)
+    return (FONT, px)
+
+
+BG = '#0b0d12'
+CARD = '#12161d'
+CARD_EDGE = '#202736'
+TEXT = '#eef1f7'
+SUBTEXT = '#7d879a'
+SUBTEXT2 = '#4a5366'
+TRACK = '#1c222d'
+BTN = '#1c222d'
+BTN_HOVER = '#2a3344'
+ACCENT = '#38bdf8'
+ACCENT_HOVER = '#7dd3fc'
+KNOB = '#ffffff'
+GREEN = '#34d399'
+YELLOW = '#fbbf24'
+RED = '#fb7185'
+
+MUTE_RED = '#ef4444'
+MUTE_RED_HOVER = '#f86060'
+MUTE_GREEN = GREEN
+MUTE_GREEN_HOVER = '#6ee7b7'
+MUTE_GREEN_TEXT = '#052e16'
+# Obroba okroglih gumbov: modra kot napis MASTER (ACCENT).
+MUTE_RING = ACCENT
+MUTE_RING_HOVER = ACCENT_HOVER
+
+
+def resource_path(name):
+    """Pot do datoteke ob skripti ali (v .exe) v PyInstallerjevi začasni mapi."""
+    base = getattr(sys, '_MEIPASS', os.path.dirname(os.path.abspath(__file__)))
+    return os.path.join(base, name)
+
+
+def mix(c1, c2, t):
+    """Pomeša dve hex barvi (t=0 -> c1, t=1 -> c2)."""
+    a = [int(c1[i:i + 2], 16) for i in (1, 3, 5)]
+    b = [int(c2[i:i + 2], 16) for i in (1, 3, 5)]
+    return '#%02x%02x%02x' % tuple(round(x + (y - x) * t) for x, y in zip(a, b))
+
+
+# Kovinski videz drsnikov: temen rob -> svetlina -> temen rob (žleb)
+# oz. svetlo zgoraj -> temno spodaj (ročaj).
+STEEL_EDGE = '#0b0e13'
+STEEL_STOPS = ((0.00, '#242a33'), (0.15, '#4b5561'), (0.34, '#b6c1cd'),
+               (0.50, '#8d98a5'), (0.68, '#5e6772'), (0.86, '#3b434d'),
+               (1.00, '#232932'))
+KNOB_STOPS = ((0.00, '#f2f7fb'), (0.20, '#d6dfe8'), (0.45, '#abb6c3'),
+              (0.65, '#818c9a'), (0.85, '#5a636e'), (1.00, '#383f49'))
+
+
+def _ramp(stops, n):
+    """Vrne n barv, enakomerno interpoliranih med barvnimi postanki."""
+    out = []
+    for i in range(n):
+        t = i / max(1, n - 1)
+        for (p0, c0), (p1, c1) in zip(stops, stops[1:]):
+            if t <= p1 + 1e-9:
+                k = 0.0 if p1 <= p0 else (t - p0) / (p1 - p0)
+                out.append(mix(c0, c1, max(0.0, min(1.0, k))))
+                break
+        else:
+            out.append(stops[-1][1])
+    return out
+
+
+def steel_ramp(n):
+    """n navpičnih odtenkov kovinskega žleba."""
+    return _ramp(STEEL_STOPS, n)
+
+
+def metal_rows(h):
+    """h vodoravnih odtenkov kovinskega ročaja."""
+    return _ramp(KNOB_STOPS, h)
+
+
+try:
+    from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageTk
+    HAVE_PIL = True
+except Exception:
+    HAVE_PIL = False
+
+SS = 4  # nadvzorčenje: gumb narišemo 4x večji in pomanjšamo -> gladki robovi
+
+
+def _rgb(color):
+    return tuple(int(color[i:i + 2], 16) for i in (1, 3, 5))
+
+
+def _shade(color, factor):
+    """factor < 1 = temnejša barva, > 1 = svetlejša."""
+    r, g, b = _rgb(color)
+    return tuple(max(0, min(255, round(v * factor))) for v in (r, g, b))
+
+
+def _vgrad(w, h, top, bottom):
+    """Navpična prelivka RGB."""
+    strip = Image.new('RGB', (1, h))
+    px = strip.load()
+    for y in range(h):
+        t = y / max(1, h - 1)
+        px[0, y] = tuple(round(a + (b - a) * t) for a, b in zip(top, bottom))
+    return strip.resize((w, h))
+
+
+def _disc(size, radius):
+    """Maska polnega kroga."""
+    mask = Image.new('L', (size, size), 0)
+    c = size / 2
+    ImageDraw.Draw(mask).ellipse([c - radius, c - radius, c + radius, c + radius],
+                                 fill=255)
+    return mask
+
+
+def _ring(size, r_out, r_in):
+    """Maska obroča (krog z izrezanim središčem)."""
+    mask = Image.new('L', (size, size), 0)
+    d = ImageDraw.Draw(mask)
+    c = size / 2
+    d.ellipse([c - r_out, c - r_out, c + r_out, c + r_out], fill=255)
+    d.ellipse([c - r_in, c - r_in, c + r_in, c + r_in], fill=0)
+    return mask
+
+
+def _pill(size_w, size_h, radius):
+    """Maska zaobljenega pravokotnika (pilule)."""
+    mask = Image.new('L', (size_w, size_h), 0)
+    ImageDraw.Draw(mask).rounded_rectangle([0, 0, size_w - 1, size_h - 1],
+                                           radius=radius, fill=255)
+    return mask
+
+
+DIM = {c: mix(c, TRACK, 0.62) for c in (GREEN, YELLOW, RED)}
+
+METER_INTERVAL_MS = 40
+USE_NEON_FRAME = False
+ANIMATE_FRAME = False
+HOLD_FALL = 1.0
+
+PROFILES = {
+    'headphones': (40, 60),
+    'speakers': (60, 80),
+    'mic': (70, 90),
+    'other': (60, 80),
+}
+
+PROFILE_LABELS = {
+    'headphones': 'slušalke',
+    'speakers': 'zvočniki',
+    'mic': 'mikrofon',
+    'other': 'naprava',
+}
+
+FORM_FACTOR_KEY = '{1da5d803-d492-4edd-8c23-e0c0ffee7f0e} 0'
+FORM_FACTOR_PROFILE = {
+    1: 'speakers',
+    2: 'speakers',
+    3: 'headphones',
+    4: 'mic',
+    5: 'headphones',
+    6: 'headphones',
+    8: 'speakers',
+    9: 'speakers',
+}
+
+HEADPHONE_WORDS = ('headphone', 'headset', 'earphone', 'earbud', 'buds', 'airpods',
+                   'slušalk', 'hands-free', 'handsfree')
+SPEAKER_WORDS = ('speaker', 'zvočnik', 'soundbar', 'hdmi')
+MIC_WORDS = ('microphone', 'mikrofon', 'mic ')
+
+
+def detect_profile(name, direction, device):
+    """Določi vrsto naprave: najprej po form factorju, nato po imenu."""
+    if direction == 'Vhod':
+        return 'mic'
+    try:
+        props = AudioUtilities.CreateDevice(device).properties
+        ff = props.get(FORM_FACTOR_KEY)
+        if ff is not None and int(ff) in FORM_FACTOR_PROFILE:
+            return FORM_FACTOR_PROFILE[int(ff)]
+    except Exception:
+        pass
+    low = name.lower()
+    if any(w in low for w in HEADPHONE_WORDS):
+        return 'headphones'
+    if any(w in low for w in MIC_WORDS):
+        return 'mic'
+    if any(w in low for w in SPEAKER_WORDS):
+        return 'speakers'
+    return 'other'
+
+
+def level_color(level, profile='other'):
+    """Barva glede na glasnost in vrsto naprave, ki predvaja zvok."""
+    green_max, yellow_max = PROFILES[profile]
+    if level <= green_max:
+        return GREEN
+    if level <= yellow_max:
+        return YELLOW
+    return RED
+
+
+def list_devices():
+    """Vrne seznam (ime, smer, glasnost, profil, meter) za vse aktivne naprave."""
+    enumerator = comtypes.CoCreateInstance(CLSID_MMDeviceEnumerator,
+                                           IMMDeviceEnumerator,
+                                           comtypes.CLSCTX_INPROC_SERVER)
+    result = []
+    for flow, label in ((E_RENDER, 'Izhod'), (E_CAPTURE, 'Vhod')):
+        collection = enumerator.EnumAudioEndpoints(flow, STATE_ACTIVE)
+        for i in range(collection.GetCount()):
+            dev = collection.Item(i)
+            try:
+                name = AudioUtilities.CreateDevice(dev).FriendlyName
+            except Exception:
+                name = f'Naprava {i}'
+            iface = dev.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
+            vol = cast(iface, POINTER(IAudioEndpointVolume))
+            try:
+                m_iface = dev.Activate(IAudioMeterInformation._iid_, CLSCTX_ALL, None)
+                meter = cast(m_iface, POINTER(IAudioMeterInformation))
+            except Exception:
+                meter = None
+            try:
+                dev_id = dev.GetId()
+            except Exception:
+                dev_id = f'{label}:{name}'
+            result.append((name, label, vol, detect_profile(name, label, dev), meter, dev_id))
+    return result
+
+
+class NameStore:
+    """Shranjuje imena kanalov, ki jih je uporabnik spremenil (JSON v %APPDATA%)."""
+
+    def __init__(self):
+        base = os.environ.get('APPDATA') or os.path.expanduser('~')
+        self.path = os.path.join(base, 'VolumeMixer', 'names.json')
+        self.data = {}
+        try:
+            with open(self.path, encoding='utf-8') as f:
+                loaded = json.load(f)
+            if isinstance(loaded, dict):
+                self.data = {str(k): str(v) for k, v in loaded.items()}
+        except Exception:
+            pass
+
+    def get(self, key, default):
+        return self.data.get(key) or default
+
+    def set(self, key, value):
+        value = value.strip()
+        if value:
+            self.data[key] = value
+        else:
+            self.data.pop(key, None)
+        try:
+            os.makedirs(os.path.dirname(self.path), exist_ok=True)
+            with open(self.path, 'w', encoding='utf-8') as f:
+                json.dump(self.data, f, ensure_ascii=False, indent=2)
+        except Exception:
+            pass
+
+
+class GroupVolume:
+    """Master: skupna glasnost vseh izhodnih naprav (ima enak vmesnik kot IAudioEndpointVolume).
+
+    Prikazuje glasnost najglasnejše naprave. Ko premakneš master, se vse izhodne naprave
+    sorazmerno premaknejo, tako da ostanejo razmerja med njimi enaka.
+    """
+
+    def __init__(self, vols):
+        self.vols = vols
+        self._base = None
+
+    def _levels(self):
+        out = []
+        for v in self.vols:
+            try:
+                out.append(v.GetMasterVolumeLevelScalar())
+            except Exception:
+                out.append(0.0)
+        return out
+
+    def begin_drag(self):
+        self._base = self._levels()
+
+    def end_drag(self):
+        self._base = None
+
+    def GetMasterVolumeLevelScalar(self):
+        return max(self._levels(), default=0.0)
+
+    def SetMasterVolumeLevelScalar(self, value, ctx):
+        base = self._base or self._levels()
+        top = max(base, default=0.0)
+        for v, b in zip(self.vols, base):
+            if top <= 0.001:
+                new = value
+            else:
+                new = value * b / top
+            try:
+                v.SetMasterVolumeLevelScalar(min(1.0, max(0.0, new)), ctx)
+            except Exception:
+                pass
+
+    def GetMute(self):
+        try:
+            return int(bool(self.vols) and all(v.GetMute() for v in self.vols))
+        except Exception:
+            return 0
+
+    def SetMute(self, muted, ctx):
+        for v in self.vols:
+            try:
+                v.SetMute(muted, ctx)
+            except Exception:
+                pass
+
+
+class GroupMeter:
+    """Peak master mešalnika: najvišji peak med vsemi izhodnimi napravami."""
+
+    def __init__(self, meters):
+        self.meters = [m for m in meters if m is not None]
+
+    def GetPeakValue(self):
+        peak = 0.0
+        for m in self.meters:
+            try:
+                peak = max(peak, m.GetPeakValue())
+            except Exception:
+                pass
+        return peak
+
+
+class FlatButton(tk.Label):
+    """Ploščat gumb z hover učinkom."""
+
+    def __init__(self, parent, text, command, bg=BTN, hover=BTN_HOVER, fg=TEXT,
+                 font=F(9, 'bold'), padx=16, pady=6):
+        super().__init__(parent, text=text, bg=bg, fg=fg, font=font, padx=padx,
+                         pady=pady, cursor='hand2')
+        self.command = command
+        self.base, self.hover, self._hovering = bg, hover, False
+        self.bind('<Enter>', self._enter)
+        self.bind('<Leave>', self._leave)
+        self.bind('<Button-1>', lambda e: self.command())
+
+    def _enter(self, _):
+        self._hovering = True
+        self.config(bg=self.hover)
+
+    def _leave(self, _):
+        self._hovering = False
+        self.config(bg=self.base)
+
+    def restyle(self, bg, hover, fg, text=None):
+        self.base, self.hover = bg, hover
+        self.config(bg=hover if self._hovering else bg, fg=fg)
+        if text is not None:
+            self.config(text=text)
+
+
+MAX_NAME = 28
+
+
+def short_name(name):
+    """Dolga imena naprav skrajša, da kartica ostane ozka."""
+    if len(name) <= MAX_NAME:
+        return name
+    return name[:MAX_NAME - 1].rstrip() + '…'
+
+
+class RoundedCard(tk.Canvas):
+    """Zaobljeno polje (kartica), v katero damo vsebino prek .inner."""
+
+    RADIUS = 20
+    PAD = 6
+
+    def __init__(self, parent, accent=False, group=None):
+        super().__init__(parent, bg=BG, highlightthickness=0, bd=0)
+        self.accent = accent
+        self._size = None
+        self.group = group if group is not None else []
+        self.group.append(self)
+        self.inner = tk.Frame(self, bg=CARD)
+        self.win = self.create_window(self.PAD, self.PAD, window=self.inner, anchor='nw')
+        self.inner.bind('<Configure>', lambda e: self.fit())
+
+    def fit(self):
+        members = [c for c in self.group if c.winfo_exists()]
+        if not members:
+            return
+        w = max(c.inner.winfo_reqwidth() for c in members) + 2 * self.PAD
+        h = max(c.inner.winfo_reqheight() for c in members) + 2 * self.PAD
+        for c in members:
+            c.apply(w, h)
+
+    def apply(self, w, h):
+        if self._size == (w, h):
+            return
+        self._size = (w, h)
+        self.config(width=w, height=h)
+        self.itemconfig(self.win, width=w - 2 * self.PAD, height=h - 2 * self.PAD)
+        self.delete('bg')
+        x0, y0, x1, y1, r = 1, 1, w - 1, h - 1, self.RADIUS
+        pts = [x0 + r, y0, x1 - r, y0, x1, y0, x1, y0 + r, x1, y1 - r, x1, y1,
+               x1 - r, y1, x0 + r, y1, x0, y1, x0, y1 - r, x0, y0 + r, x0, y0]
+        self.create_polygon(pts, smooth=True, fill=CARD, tags='bg',
+                            outline=mix(ACCENT, CARD, 0.25) if self.accent else CARD_EDGE,
+                            width=2 if self.accent else 1)
+        sheen = mix(ACCENT, CARD, 0.45) if self.accent else mix(CARD, '#ffffff', 0.07)
+        self.create_line(x0 + r, y0 + 2, x1 - r, y0 + 2, fill=sheen, tags='bg')
+        self.tag_lower('bg')
+
+
+class PillButton(tk.Canvas):
+    """Gumb v obliki pilule. Privzeto je poln (barvna prelivka), z ``ghost=True``
+    pa je temen z izrazito obrobo in napisom v barvi obrobe."""
+
+    def __init__(self, parent, text, command, bg, hover, fg='#ffffff',
+                 width=64, height=24, font=None, parent_bg=CARD,
+                 ghost=False, fg_hover=None, radius=None):
+        super().__init__(parent, width=width, height=height, bg=parent_bg,
+                         highlightthickness=0, bd=0, cursor='hand2')
+        self.w, self.h = width, height
+        self.command = command
+        self.font = font or F(9, 'bold')
+        self.base, self.hover, self.fg, self.text = bg, hover, fg, text
+        self.ghost = ghost
+        self.fg_hover = fg_hover
+        self.radius = radius
+        self._hovering = False
+        self.bind('<Enter>', lambda e: self._set_hover(True))
+        self.bind('<Leave>', lambda e: self._set_hover(False))
+        self.bind('<Button-1>', lambda e: self.command())
+        self.draw()
+
+    def _set_hover(self, value):
+        self._hovering = value
+        self.draw()
+
+    def draw(self):
+        self.delete('all')
+        if HAVE_PIL:
+            self._img = ImageTk.PhotoImage(self.render_image(), master=self)
+            self.create_image(0, 0, image=self._img, anchor='nw')
+        elif self.ghost:
+            w, h, r = self.w, self.h, self.radius or self.h / 2
+            fill = '#111c26'
+            edge = self.hover if self._hovering else self.base
+            pts = [r, 0, w - r, 0, w, 0, w, r, w, h - r, w, h,
+                   w - r, h, r, h, 0, h, 0, h - r, 0, r, 0, 0]
+            self.create_polygon(pts, smooth=True, fill=fill, outline=edge, width=2)
+        else:
+            w, h = self.w, self.h
+            fill = self.hover if self._hovering else self.base
+            self.create_oval(0, 0, w, h, fill=fill, outline='')
+            self.create_oval(w - h, 0, w, h, fill=fill, outline='')
+            self.create_rectangle(h / 2, 0, w - h / 2, h, fill=fill, outline='')
+        color = self.fg_hover if (self._hovering and self.fg_hover) else self.fg
+        self.create_text(self.w / 2, self.h / 2, text=self.text, fill=color,
+                         font=self.font)
+
+    def render_image(self):
+        """Gladek gumb (nadvzorčen, LANCZOS); poln ali obroben (ghost)."""
+        w, h = self.w, self.h
+        nw, nh = w * SS, h * SS
+        rad = self.radius if self.radius is not None else h / 2
+        nrad = rad * SS
+        if self.ghost:
+            return self._render_ghost(nw, nh, nrad, w, h)
+        fill = self.hover if self._hovering else self.base
+        mask = _pill(nw, nh, nrad)
+        img = Image.new('RGBA', (nw, nh), (0, 0, 0, 0))
+        img.paste(_vgrad(nw, nh, _shade(fill, 1.22), _shade(fill, 0.84)).convert('RGBA'),
+                  (0, 0), mask)
+        sheen = Image.new('RGBA', (nw, nh), (0, 0, 0, 0))
+        ImageDraw.Draw(sheen).rounded_rectangle(
+            [SS * 2, SS * 1.5, nw - 1 - SS * 2, nh * 0.46], radius=nrad,
+            outline=(255, 255, 255, 42), width=SS)
+        sheen.putalpha(ImageChops.multiply(sheen.getchannel('A'), mask))
+        img.alpha_composite(sheen)
+        ImageDraw.Draw(img).rounded_rectangle(
+            [0, 0, nw - 1, nh - 1], radius=nrad,
+            outline=_shade(fill, 0.50) + (255,), width=SS)
+        return img.resize((w, h), Image.LANCZOS)
+
+    def _render_ghost(self, nw, nh, nrad, w, h):
+        """Temno telo z modro obrobo, mehkim sijajem in nežno senco."""
+        edge = self.hover if self._hovering else self.base
+        body = mix('#0f1a23', edge, 0.20 if self._hovering else 0.10)
+        mask = Image.new('L', (nw, nh), 0)
+        ImageDraw.Draw(mask).rounded_rectangle([0, 0, nw - 1, nh - 1],
+                                               radius=nrad, fill=255)
+        img = Image.new('RGBA', (nw, nh), (0, 0, 0, 0))
+        img.paste(_vgrad(nw, nh, _shade(body, 1.20), _shade(body, 0.86)).convert('RGBA'),
+                  (0, 0), mask)
+
+        glow = Image.new('RGBA', (nw, nh), (0, 0, 0, 0))
+        ImageDraw.Draw(glow).rounded_rectangle(
+            [SS, SS, nw - 1 - SS, nh - 1 - SS], radius=nrad,
+            outline=_rgb(edge) + (95 if self._hovering else 55,), width=2 * SS)
+        img.alpha_composite(glow.filter(ImageFilter.GaussianBlur(1.6 * SS)))
+
+        sheen = Image.new('RGBA', (nw, nh), (0, 0, 0, 0))
+        ImageDraw.Draw(sheen).rounded_rectangle(
+            [SS * 3, SS * 2.2, nw - 1 - SS * 3, nh * 0.50], radius=nrad,
+            outline=_rgb(edge) + (55,), width=SS)
+        sheen.putalpha(ImageChops.multiply(sheen.getchannel('A'), mask))
+        img.alpha_composite(sheen)
+
+        ImageDraw.Draw(img).rounded_rectangle(
+            [SS, SS, nw - 1 - SS, nh - 1 - SS], radius=nrad,
+            outline=_rgb(edge) + (255,), width=int(1.5 * SS))
+        return img.resize((w, h), Image.LANCZOS)
+
+    def restyle(self, bg, hover, fg, text=None):
+        self.base, self.hover, self.fg = bg, hover, fg
+        if text is not None:
+            self.text = text
+        self.draw()
+
+
+class MuteButton(tk.Canvas):
+    """Okrogel gumb za utišanje: zunanji obroč je vedno moder (kot napis
+    MASTER), notranji krog pa gori zeleno, ko je zvok aktiven, in je rdeč,
+    ko je kanal utišan."""
+
+    SIZE = 34
+
+    def __init__(self, parent, command, active=True, parent_bg=CARD):
+        super().__init__(parent, width=self.SIZE, height=self.SIZE, bg=parent_bg,
+                         highlightthickness=0, bd=0, cursor='hand2')
+        self.command = command
+        self.active = active
+        self._hovering = False
+        self._img = None
+        self.bind('<Enter>', lambda e: self._set_hover(True))
+        self.bind('<Leave>', lambda e: self._set_hover(False))
+        self.bind('<Button-1>', lambda e: self.command())
+        self.draw()
+
+    def _set_hover(self, value):
+        self._hovering = value
+        self.draw()
+
+    def set_active(self, active):
+        """active=True -> notranji krog je zelen, False -> rdeč."""
+        if active == self.active:
+            return
+        self.active = active
+        self.draw()
+
+    def draw(self):
+        self.delete('all')
+        if HAVE_PIL:
+            self._img = ImageTk.PhotoImage(self.render_image(), master=self)
+            self.create_image(0, 0, image=self._img, anchor='nw')
+            return
+        s = self.SIZE
+        cx = cy = s / 2
+        ring = MUTE_RING_HOVER if self._hovering else MUTE_RING
+        self.create_oval(1.5, 1.5, s - 1.5, s - 1.5, outline=ring, width=3)
+        if self.active:
+            fill = MUTE_GREEN_HOVER if self._hovering else MUTE_GREEN
+        else:
+            fill = MUTE_RED_HOVER if self._hovering else MUTE_RED
+        r = s / 2 - 6
+        self.create_oval(cx - r, cy - r, cx + r, cy + r, fill=fill, outline='')
+        icon = MUTE_GREEN_TEXT if self.active else '#ffffff'
+        u = r * 0.85
+        self.create_polygon(cx - 0.5 * u, cy - 0.22 * u, cx - 0.22 * u, cy - 0.22 * u,
+                            cx + 0.09 * u, cy - 0.58 * u, cx + 0.09 * u, cy + 0.58 * u,
+                            cx - 0.22 * u, cy + 0.22 * u, cx - 0.5 * u, cy + 0.22 * u,
+                            fill=icon, outline='')
+        if self.active:
+            self.create_arc(cx, cy - 0.5 * u, cx + 0.62 * u, cy + 0.5 * u,
+                            start=-55, extent=110, style='arc', outline=icon, width=2)
+        else:
+            self.create_line(cx - 0.62 * u, cy + 0.62 * u, cx + 0.62 * u, cy - 0.62 * u,
+                             fill=icon, width=2)
+
+    def render_image(self):
+        """Gladek okrogel gumb: moder obroč (kot napis MASTER), notranji krog z
+        radialno prelivko, mehka senca, odsev in anti-aliased simbol zvočnika."""
+        s = self.SIZE
+        n = s * SS
+        c = n / 2
+        r_out = (s / 2 - 1.0) * SS
+        r_in = r_out - 3.0 * SS
+        r_core = r_in - 1.5 * SS
+        hover = self._hovering
+
+        ring_top = _shade(MUTE_RING_HOVER, 1.05 if hover else 0.98)
+        ring_bot = _shade(MUTE_RING, 0.74 if hover else 0.62)
+        if self.active:
+            core_in = _shade(MUTE_GREEN_HOVER, 1.06 if hover else 0.96)
+            core_out = _shade(MUTE_GREEN, 0.62)
+            glyph = _rgb(MUTE_GREEN_TEXT)
+        else:
+            core_in = _shade(MUTE_RED_HOVER, 1.06 if hover else 0.96)
+            core_out = _shade(MUTE_RED, 0.60)
+            glyph = (255, 255, 255)
+
+        img = Image.new('RGBA', (n, n), (0, 0, 0, 0))
+
+        shadow = Image.new('RGBA', (n, n), (0, 0, 0, 0))
+        ImageDraw.Draw(shadow).ellipse(
+            [c - r_out, c - r_out + 1.4 * SS, c + r_out, c + r_out + 1.4 * SS],
+            fill=(0, 0, 0, 120))
+        img.alpha_composite(shadow.filter(ImageFilter.GaussianBlur(1.5 * SS)))
+
+        img.paste(_vgrad(n, n, ring_top, ring_bot).convert('RGBA'), (0, 0),
+                  _ring(n, r_out, r_in))
+
+        grad = Image.radial_gradient('L').resize((n, n), Image.BICUBIC)
+        core = Image.composite(Image.new('RGB', (n, n), core_out),
+                               Image.new('RGB', (n, n), core_in), grad)
+        img.paste(core.convert('RGBA'), (0, 0), _disc(n, r_core))
+
+        gloss = Image.new('RGBA', (n, n), (0, 0, 0, 0))
+        ImageDraw.Draw(gloss).ellipse(
+            [c - r_core * 0.62, c - r_core * 0.88, c + r_core * 0.30, c - r_core * 0.02],
+            fill=(255, 255, 255, 80 if self.active else 60))
+        gloss = gloss.filter(ImageFilter.GaussianBlur(r_core * 0.16))
+        gloss.putalpha(ImageChops.multiply(gloss.getchannel('A'), _disc(n, r_core)))
+        img.alpha_composite(gloss)
+
+        d = ImageDraw.Draw(img)
+        u = r_core * 0.92
+        lw = max(2, int(u * 0.10))
+        d.polygon([(c - 0.46 * u, c - 0.20 * u), (c - 0.20 * u, c - 0.20 * u),
+                   (c + 0.08 * u, c - 0.54 * u), (c + 0.08 * u, c + 0.54 * u),
+                   (c - 0.20 * u, c + 0.20 * u), (c - 0.46 * u, c + 0.20 * u)],
+                  fill=glyph)
+        if self.active:
+            d.arc([c + 0.04 * u, c - 0.44 * u, c + 0.60 * u, c + 0.44 * u],
+                  -55, 55, fill=glyph, width=lw)
+            d.arc([c + 0.04 * u, c - 0.76 * u, c + 0.94 * u, c + 0.76 * u],
+                  -50, 50, fill=glyph, width=lw)
+        else:
+            d.line([(c - 0.60 * u, c + 0.60 * u), (c + 0.60 * u, c - 0.60 * u)],
+                   fill=glyph, width=lw)
+
+        return img.resize((s, s), Image.LANCZOS)
+
+
+def draw_device_icon(c, kind, color):
+    """Vektorska ikona naprave (26x26 px), narisana s platnom."""
+    c.delete('all')
+
+    if kind == 'headphones':
+        c.create_arc(5, 4, 21, 20, start=0, extent=180, style='arc',
+                     outline=color, width=2)
+        c.create_rectangle(4, 12, 9, 20, fill=color, outline=color)
+        c.create_rectangle(17, 12, 22, 20, fill=color, outline=color)
+        return
+
+    if kind == 'mic':
+        c.create_oval(10, 3, 16, 9, fill=color, outline=color)
+        c.create_rectangle(10, 6, 16, 12, fill=color, outline=color)
+        c.create_oval(10, 9, 16, 15, fill=color, outline=color)
+        c.create_arc(7, 7, 19, 19, start=180, extent=180, style='arc',
+                     outline=color, width=2)
+        c.create_line(13, 19, 13, 23, fill=color, width=2)
+        c.create_line(9, 23, 17, 23, fill=color, width=2)
+        return
+
+    if kind == 'master':
+        for x, yk in ((7, 16), (13, 9), (19, 15)):
+            c.create_line(x, 4, x, 22, fill=mix(color, CARD, 0.55), width=2)
+            c.create_oval(x - 3, yk - 3, x + 3, yk + 3, fill=color, outline=color)
+        return
+
+    c.create_polygon(4, 10, 8, 10, 13, 5, 13, 21, 8, 16, 4, 16,
+                     fill=color, outline=color)
+    c.create_arc(11, 8, 20, 18, start=-55, extent=110, style='arc',
+                 outline=color, width=2)
+    c.create_arc(10, 4, 24, 22, start=-55, extent=110, style='arc',
+                 outline=color, width=2)
+
+
+class DeviceColumn(tk.Frame):
+    """Kartica: ikona in ime, drsnik z LED peak meterjem, odstotek in gumb Utišaj."""
+
+    CANVAS_W = 52
+    TRACK_TOP = 12
+    TRACK_H = 150
+    TRACK_W = 10
+    CX = 34
+    KNOB_W = 20
+    KNOB_H = 13
+    SEGMENTS = 30
+
+    def __init__(self, parent, name, direction, vol, profile, meter,
+                 master=False, on_change=None, key=None, names=None):
+        super().__init__(parent, bg=CARD, padx=4, pady=4)
+        self.shell = None
+        self.is_master = master
+        self.key = key
+        self.names = names
+        self.default_name = name
+        self.entry = None
+        self.on_change = on_change
+        self.vol = vol
+        self.profile = profile
+        self.meter = meter
+        self.dragging = False
+        self.volume = vol.GetMasterVolumeLevelScalar() * 100
+        self.muted = bool(vol.GetMute())
+        self.level = 0.0
+        self.hold = 0.0
+        tint = ACCENT if master else SUBTEXT
+
+        self.icon = tk.Canvas(self, width=26, height=26, bg=CARD, highlightthickness=0)
+        self.icon.pack(pady=(2, 0))
+        draw_device_icon(self.icon, 'master' if master else profile, tint)
+
+        tk.Label(self, text='MASTER' if master else direction.upper(), bg=CARD, fg=tint,
+                 font=F(7, 'bold')).pack(pady=(1, 3))
+
+        shown = names.get(key, name) if names and key else name
+        self.full_name = shown
+        self.name_box = tk.Frame(self, bg=CARD)
+        self.name_box.pack()
+        self.name_lbl = tk.Label(self.name_box, text=short_name(shown), bg=CARD, fg=TEXT,
+                                 font=F(9), wraplength=56, justify='center', cursor='hand2')
+        self.edit_icon = tk.Label(self.name_box, text='✎', bg=CARD, fg=SUBTEXT2,
+                                  font=F(9), cursor='hand2')
+        self.name_lbl.pack(side='left')
+        self.edit_icon.pack(side='left', padx=(4, 0))
+        self.name_lbl.bind('<Double-Button-1>', lambda e: self.start_rename())
+        self.edit_icon.bind('<Button-1>', lambda e: self.start_rename())
+        self.edit_icon.bind('<Enter>', lambda e: self.edit_icon.config(fg=ACCENT))
+        self.edit_icon.bind('<Leave>', lambda e: self.edit_icon.config(fg=SUBTEXT2))
+
+        self.canvas = tk.Canvas(self, width=self.CANVAS_W,
+                                height=self.TRACK_H + 2 * self.TRACK_TOP,
+                                bg=CARD, highlightthickness=0, cursor='hand2')
+        self.canvas.pack(pady=(8, 2))
+        self.canvas.bind('<ButtonPress-1>', self.on_press)
+        self.canvas.bind('<B1-Motion>', self.on_drag)
+        self.canvas.bind('<ButtonRelease-1>', self.on_release)
+        self.canvas.bind('<MouseWheel>', self.on_wheel)
+
+        self.pct = tk.Label(self, bg=CARD, fg=TEXT, font=F(17, 'bold'), width=4)
+        self.pct.pack()
+        self.mute_btn = MuteButton(self, self.on_mute, active=not self.muted)
+        self.mute_btn.pack(pady=(2, 2))
+        self.style_mute()
+        self.draw()
+
+    def y_of(self, pct):
+        return self.TRACK_TOP + self.TRACK_H * (1 - pct / 100)
+
+    def pct_of(self, y):
+        pct = (self.TRACK_TOP + self.TRACK_H - y) / self.TRACK_H * 100
+        return max(0.0, min(100.0, pct))
+
+    def zone_color(self, pct):
+        """Barva pri danem % z mehkim prehodom med conami (zelena, rumena, rdeča)."""
+        g, y = PROFILES[self.profile]
+        t = 4.0
+        if pct <= g - t:
+            return GREEN
+        if pct < g + t:
+            return mix(GREEN, YELLOW, (pct - (g - t)) / (2 * t))
+        if pct <= y - t:
+            return YELLOW
+        if pct < y + t:
+            return mix(YELLOW, RED, (pct - (y - t)) / (2 * t))
+        return RED
+
+    def draw(self):
+        """Nariše žleb, gradientno polnilo, skalo in ročaj; nato še peak meter."""
+        c = self.canvas
+        c.delete('all')
+        cx, tw = self.CX, self.TRACK_W
+        top_y = self.TRACK_TOP
+        bot_y = self.TRACK_TOP + self.TRACK_H
+        vol = self.volume
+
+        self.level = min(self.level, vol)
+        self.hold = min(self.hold, vol)
+
+        for p in (0, 25, 50, 75, 100):
+            y = self.y_of(p)
+            c.create_line(21, y, 24 if p % 50 == 0 else 26, y, fill=SUBTEXT2)
+            if p % 50 == 0:
+                c.create_text(17, y, text=str(p), anchor='e', fill=SUBTEXT2, font=F(7))
+
+        # Žleb: pravokoten kovinski kanal (brez zaobljenih robov).
+        x0 = cx - tw / 2
+        for i, col in enumerate(steel_ramp(tw)):
+            c.create_rectangle(x0 + i, top_y, x0 + i + 1, bot_y,
+                               fill=col, outline='')
+        c.create_rectangle(x0 - 1, top_y - 1, x0 + tw + 1, bot_y + 1,
+                           outline=STEEL_EDGE)
+        c.create_line(x0, top_y + 1, x0 + tw, top_y + 1, fill='#1a1f27')
+
+        # Polnilo: barva cone v kovinskem odtenku + robna svetloba/senca.
+        hy = self.y_of(vol)
+        hw = tw / 2 - 2
+        y = bot_y
+        while y > hy + 0.5:
+            y2 = max(hy, y - 3)
+            base = TRACK if self.muted else mix(
+                self.zone_color(self.pct_of((y + y2) / 2)), TRACK, 0.55)
+            c.create_rectangle(cx - hw, y2, cx + hw, y, fill=base, outline='')
+            c.create_line(cx - hw, y2, cx - hw, y, fill=mix(base, '#ffffff', 0.35))
+            c.create_line(cx + hw, y2, cx + hw, y, fill=mix(base, '#000000', 0.40))
+            y = y2
+
+        # Ročaj: pravokoten kovinski drsnik s prelivko in barvno oznako cone.
+        ring = SUBTEXT if self.muted else level_color(vol, self.profile)
+        left, right = cx - self.KNOB_W / 2, cx + self.KNOB_W / 2
+        top, bot = hy - self.KNOB_H / 2, hy + self.KNOB_H / 2
+        c.create_rectangle(left + 1, top + 2, right + 1, bot + 2,
+                           fill='#070a0e', outline='', tags='knob')
+        for i, col in enumerate(metal_rows(self.KNOB_H)):
+            c.create_rectangle(left, top + i, right, top + i + 1,
+                               fill=col, outline='', tags='knob')
+        c.create_rectangle(left, top, right, bot, outline=STEEL_EDGE, tags='knob')
+        for gx in (left + 4.5, right - 4.5):
+            c.create_line(gx, top + 2.5, gx, bot - 2.5,
+                          fill='#6d7784', tags='knob')
+        c.create_rectangle(left + 3, hy - 1.5, right - 3, hy + 1.5,
+                           fill=ring, outline='', tags='knob')
+        c.create_line(left + 2, top + 1.5, right - 2, top + 1.5,
+                      fill='#ffffff', tags='knob')
+        self.pct.config(text=f'{int(round(vol))}%',
+                        fg=SUBTEXT if self.muted else ring)
+        self.draw_meter()
+
+    def draw_meter(self):
+        """LED peak meter znotraj žleba: segmenti sežejo največ do ročaja."""
+        c = self.canvas
+        c.delete('meter')
+        if self.muted:
+            return
+        cx, n = self.CX, self.SEGMENTS
+        for i in range(n):
+            hi = (i + 1) / n * 100
+            lo = i / n * 100
+            if lo >= self.volume:
+                break
+            if (lo + hi) / 2 <= self.level:
+                c.create_rectangle(cx - 2, self.y_of(hi) + 1, cx + 2, self.y_of(lo),
+                                   fill=self.zone_color((lo + hi) / 2),
+                                   outline='', tags='meter')
+        if self.hold > 0.5:
+            y = self.y_of(self.hold)
+            c.create_rectangle(cx - 2, y - 1, cx + 2, y + 1,
+                               fill=KNOB, outline='', tags='meter')
+        c.tag_lower('meter', 'knob')
+
+    def style_mute(self):
+        self.mute_btn.set_active(not self.muted)
+
+    def start_rename(self):
+        """Dvojni klik na ime (ali klik na svinčnik) odpre vnos novega imena."""
+        if self.entry is not None:
+            return
+        self.name_lbl.pack_forget()
+        self.edit_icon.pack_forget()
+        self.entry = tk.Entry(self.name_box, font=F(9), justify='center', width=10,
+                              bg=BTN, fg=TEXT, insertbackground=TEXT, relief='flat',
+                              highlightthickness=1, highlightbackground=ACCENT,
+                              highlightcolor=ACCENT)
+        self.entry.insert(0, self.full_name)
+        self.entry.select_range(0, 'end')
+        self.entry.pack(ipady=3)
+        self.entry.focus_force()
+        self.entry.bind('<Return>', lambda e: self.finish_rename(True))
+        self.entry.bind('<Escape>', lambda e: self.finish_rename(False))
+        self.entry.bind('<FocusOut>', lambda e: self.finish_rename(True))
+
+    def finish_rename(self, save):
+        entry = self.entry
+        if entry is None:
+            return
+        self.entry = None
+        new = entry.get().strip()
+        entry.destroy()
+        if save and self.names is not None and self.key:
+            self.names.set(self.key, new)
+            self.full_name = new or self.default_name
+            self.name_lbl.config(text=short_name(self.full_name))
+        self.name_lbl.pack(side='left')
+        self.edit_icon.pack(side='left', padx=(4, 0))
+
+    def set_volume(self, pct):
+        self.volume = max(0.0, min(100.0, pct))
+        try:
+            self.vol.SetMasterVolumeLevelScalar(self.volume / 100, None)
+        except Exception:
+            pass
+        self.draw()
+        if self.on_change:
+            self.on_change(self)
+
+    def on_press(self, e):
+        self.dragging = True
+        begin = getattr(self.vol, 'begin_drag', None)
+        if begin:
+            begin()
+        self.set_volume(self.pct_of(e.y))
+
+    def on_drag(self, e):
+        self.set_volume(self.pct_of(e.y))
+
+    def on_release(self, _):
+        self.dragging = False
+        end = getattr(self.vol, 'end_drag', None)
+        if end:
+            end()
+
+    def on_wheel(self, e):
+        begin = getattr(self.vol, 'begin_drag', None)
+        if begin:
+            begin()
+        self.set_volume(self.volume + (2 if e.delta > 0 else -2))
+        end = getattr(self.vol, 'end_drag', None)
+        if end:
+            end()
+
+    def on_mute(self):
+        self.muted = not self.muted
+        try:
+            self.vol.SetMute(int(self.muted), None)
+        except Exception:
+            pass
+        self.style_mute()
+        self.draw()
+        if self.on_change:
+            self.on_change(self)
+
+    def update_meter(self):
+        """Peak (linearna amplituda) je na isti skali kot drsnik, zato kaže do ročaja.
+        Hiter vzpon in mehko padanje dasta gladko gibanje."""
+        if self.meter is None:
+            return
+        try:
+            peak = self.meter.GetPeakValue()
+        except Exception:
+            peak = 0.0
+        target = min(max(peak * 100, 0.0), self.volume)
+        if self.level >= target:
+            self.level = target
+        else:
+            self.level = max(target, self.level - max(1.2, (self.level - target) * 0.18))
+        self.hold = min(max(self.level, self.hold - HOLD_FALL), self.volume)
+        self.draw_meter()
+
+    def refresh(self):
+        """Sinhronizira UI, če je glasnost spremenjena od drugod."""
+        try:
+            volume = self.vol.GetMasterVolumeLevelScalar() * 100
+            muted = bool(self.vol.GetMute())
+            changed = abs(volume - self.volume) > 0.05 or muted != self.muted
+            self.volume = volume
+            if muted != self.muted:
+                self.muted = muted
+                self.style_mute()
+            if changed:
+                self.draw()
+        except Exception:
+            return
+
+
+def colorref(hex_color):
+    """#rrggbb -> Windows COLORREF (0x00BBGGRR)."""
+    r, g, b = (int(hex_color[i:i + 2], 16) for i in (1, 3, 5))
+    return (b << 16) | (g << 8) | r
+
+
+def dark_titlebar(win):
+    """Temna naslovna vrstica; na Windows 11 še barva ozadja, roba in besedila."""
+    try:
+        import ctypes
+        win.update()
+        hwnd = ctypes.windll.user32.GetParent(win.winfo_id())
+        dwm = ctypes.windll.dwmapi
+
+        def set_attr(attr, value):
+            try:
+                v = ctypes.c_int(value)
+                dwm.DwmSetWindowAttribute(hwnd, attr, ctypes.byref(v),
+                                          ctypes.sizeof(v))
+            except Exception:
+                pass
+
+        for attr in (20, 19):
+            set_attr(attr, 1)
+        set_attr(35, colorref(BG))
+        set_attr(34, colorref(CARD_EDGE))
+        set_attr(36, colorref(TEXT))
+    except Exception:
+        pass
+
+
+def enable_dpi_awareness():
+    """Brez tega Windows okno z visokim DPI poveča in zamegli (okvir bi bil prevelik)."""
+    try:
+        import ctypes
+        try:
+            ctypes.windll.shcore.SetProcessDpiAwareness(1)
+        except Exception:
+            ctypes.windll.user32.SetProcessDPIAware()
+    except Exception:
+        pass
+
+
+def set_app_id():
+    """Svoj ID aplikacije, da opravilna vrstica pokaže našo ikono, ne Pythonove."""
+    try:
+        import ctypes
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID('JBJ.mmix')
+    except Exception:
+        pass
+
+
+def load_frame_meta():
+    """Prebere frame/meta.json (naredi ga build_frame.py). None = okvira ni."""
+    folder = resource_path('frame')
+    try:
+        with open(os.path.join(folder, 'meta.json'), encoding='utf-8') as f:
+            meta = json.load(f)
+        meta['dir'] = folder
+        return meta
+    except Exception:
+        return None
+
+
+class App(tk.Tk):
+    def __init__(self):
+        global FONT, BG
+        super().__init__()
+        self.title('mmix')
+        try:
+            self.iconbitmap(resource_path('mmicon.ico'))
+        except Exception:
+            pass
+        try:
+            from tkinter import font as tkfont
+            fams = set(tkfont.families(self))
+            for cand in ('Segoe UI Variable Text', 'Segoe UI Variable', 'Segoe UI'):
+                if cand in fams:
+                    FONT = cand
+                    break
+        except Exception:
+            pass
+        self.configure(bg=BG)
+        self.resizable(False, False)
+        self.columns = []
+        self.cards = []
+        self.names = NameStore()
+        self.meta = load_frame_meta() if USE_NEON_FRAME else None
+        if self.meta:
+            BG = self.meta['bg']
+            self.configure(bg=BG)
+        self.frames = []
+        self.frame_i = 0
+        self._drag = (0, 0)
+        self._minimized = False
+        if self.meta:
+            try:
+                for i in range(self.meta['frames'] if ANIMATE_FRAME else 1):
+                    self.frames.append(tk.PhotoImage(
+                        file=os.path.join(self.meta['dir'], f'f{i:02d}.png')))
+            except tk.TclError:
+                self.meta, self.frames = None, []
+        if self.meta:
+            self.build_framed_window()
+        else:
+            self.resizable(True, False)
+            self.content = tk.Frame(self, bg=BG, padx=10, pady=6)
+            self.content.pack(fill='both', expand=True)
+        self.build_topbar()
+        self.holder = tk.Frame(self.content, bg=BG)
+        self.holder.pack(expand=True)
+        self.build()
+        if not self.meta:
+            dark_titlebar(self)
+        self.after(1000, self.poll)
+        self.after(METER_INTERVAL_MS, self.poll_meters)
+
+    def build_framed_window(self):
+        m = self.meta
+        W, H = m['w'], m['h']
+        x0, y0, x1, y1 = m['inner']
+        key = m['key']
+        self.configure(bg=key)
+        sw, sh = self.winfo_screenwidth(), self.winfo_screenheight()
+        self.geometry(f'{W}x{H}+{max(0, (sw - W) // 2)}+{max(0, (sh - H) // 2)}')
+        self.canvas = tk.Canvas(self, width=W, height=H, bg=key, highlightthickness=0)
+        self.canvas.place(x=0, y=0)
+        self.bg_item = self.canvas.create_image(0, 0, image=self.frames[0], anchor='nw')
+        self.canvas.bind('<ButtonPress-1>', self.start_move)
+        self.canvas.bind('<B1-Motion>', self.do_move)
+        self.content = tk.Frame(self, bg=BG)
+        self.content.place(x=x0, y=y0, width=x1 - x0, height=y1 - y0)
+        self.bind('<Map>', self.on_map)
+        self.make_borderless()
+        if ANIMATE_FRAME and len(self.frames) > 1:
+            self.after(int(1000 / m.get('fps', 20)), self.animate)
+
+    def make_borderless(self):
+        self.overrideredirect(True)
+        try:
+            self.wm_attributes('-transparentcolor', self.meta['key'])
+        except tk.TclError:
+            pass
+        self.after(60, self.show_in_taskbar)
+
+    def show_in_taskbar(self):
+        """overrideredirect skrije gumb v opravilni vrstici; to ga vrne (Windows)."""
+        try:
+            import ctypes
+            GWL_EXSTYLE, WS_EX_APPWINDOW, WS_EX_TOOLWINDOW = -20, 0x40000, 0x80
+            user32 = ctypes.windll.user32
+            hwnd = user32.GetParent(self.winfo_id())
+            style = user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
+            user32.SetWindowLongW(hwnd, GWL_EXSTYLE,
+                                  (style & ~WS_EX_TOOLWINDOW) | WS_EX_APPWINDOW)
+            self.withdraw()
+            self.after(40, self.deiconify)
+        except Exception:
+            pass
+
+    def animate(self):
+        self.frame_i = (self.frame_i + 1) % len(self.frames)
+        self.canvas.itemconfig(self.bg_item, image=self.frames[self.frame_i])
+        self.after(int(1000 / self.meta['fps']), self.animate)
+
+    def start_move(self, e):
+        self._drag = (e.x_root - self.winfo_x(), e.y_root - self.winfo_y())
+
+    def do_move(self, e):
+        self.geometry(f'+{e.x_root - self._drag[0]}+{e.y_root - self._drag[1]}')
+
+    def minimize(self):
+        self._minimized = True
+        self.overrideredirect(False)
+        self.iconify()
+
+    def on_map(self, e):
+        if e.widget is self and self._minimized:
+            self._minimized = False
+            self.after(20, self.make_borderless)
+
+    def build_topbar(self):
+        bar = tk.Frame(self.content, bg=BG, padx=14, pady=10)
+        bar.pack(fill='x')
+        left = tk.Frame(bar, bg=BG)
+        left.pack(side='left')
+        try:
+            self.logo = tk.PhotoImage(file=resource_path('mmicon_header.png'))
+            logo = tk.Label(left, image=self.logo, bg=BG)
+            logo.pack(side='left', padx=(0, 10))
+        except Exception:
+            logo = None
+        text = tk.Frame(left, bg=BG)
+        text.pack(side='left')
+        title = tk.Label(text, text='mmix', bg=BG, fg=TEXT, font=F(15, 'bold'))
+        title.pack(anchor='w')
+        sub = tk.Label(text, text='Glasnost in peak meter vseh avdio naprav',
+                       bg=BG, fg=SUBTEXT, font=F(9))
+        sub.pack(anchor='w')
+        if self.meta:
+            FlatButton(bar, '✕', self.destroy, hover=RED, fg=TEXT,
+                       padx=11, pady=3).pack(side='right', padx=(6, 0))
+            FlatButton(bar, '—', self.minimize, padx=11, pady=3).pack(
+                side='right', padx=(6, 0))
+            for w in (bar, left, text, title, sub, logo):
+                if w is None:
+                    continue
+                w.bind('<ButtonPress-1>', self.start_move)
+                w.bind('<B1-Motion>', self.do_move)
+        PillButton(bar, 'Osveži naprave', self.build, ACCENT, ACCENT_HOVER,
+                   fg=ACCENT, fg_hover='#e8f7ff', width=128, height=30,
+                   font=F(9, 'bold'), parent_bg=BG, ghost=True,
+                   radius=9).pack(side='right')
+
+    def poll_meters(self):
+        for c in self.columns:
+            c.update_meter()
+        self.after(METER_INTERVAL_MS, self.poll_meters)
+
+    def build(self):
+        # Najprej odstranimo obstoječe kartice (in z njimi vsebino), sicer bi se
+        # ob vsakem osveževanju v holder dodala še ena kopija naprav.
+        for card in list(self.cards):
+            try:
+                if card.winfo_exists():
+                    card.destroy()
+            except tk.TclError:
+                pass
+        for c in list(self.columns):
+            try:
+                if c.winfo_exists():
+                    c.destroy()
+            except tk.TclError:
+                pass
+        self.columns.clear()
+        self.cards.clear()
+        devices = list_devices()
+        outputs = [d for d in devices if d[1] == 'Izhod']
+        if outputs:
+            shell = RoundedCard(self.holder, accent=True, group=self.cards)
+            master = DeviceColumn(
+                shell.inner, 'Vsi izhodni kanali', 'Izhod',
+                GroupVolume([d[2] for d in outputs]),
+                'other',
+                GroupMeter([d[4] for d in outputs]),
+                master=True, on_change=self.sync_columns, key='__master__',
+                names=self.names)
+            master.shell = shell
+            master.pack(fill='both', expand=True)
+            shell.pack(side='left', padx=5, pady=4)
+            self.columns.append(master)
+        for name, direction, vol, profile, meter, dev_id in devices:
+            shell = RoundedCard(self.holder, group=self.cards)
+            col = DeviceColumn(shell.inner, name, direction, vol, profile, meter,
+                               on_change=self.sync_columns, key=dev_id,
+                               names=self.names)
+            col.shell = shell
+            col.pack(fill='both', expand=True)
+            shell.pack(side='left', padx=5, pady=4)
+            self.columns.append(col)
+
+    def sync_columns(self, source):
+        """Ko se spremeni eden kanal, osveži ostale (npr. master ob premiku naprave)."""
+        for c in self.columns:
+            if c is not source and not c.dragging:
+                c.refresh()
+
+    def poll(self):
+        for c in self.columns:
+            if not c.dragging:
+                c.refresh()
+        self.after(1000, self.poll)
+
+
+if __name__ == '__main__':
+    set_app_id()
+    enable_dpi_awareness()
+    App().mainloop()

@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+
+# PyInstaller
+build/
+dist/
+*.spec
+mmix.exe
+mmix_setup.exe
+
+# Inno Setup
+*.log
+Output/
+
+# Urejevalniki / OS
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini
+
+# Lokalni delovni posnetki in referencna rekonstrukcija
+volume_mixer_reconstructed.py
+/drsniki_preview.png
+/gumb_osvezi.png
+/gumbi_blue_ring.png
+/gumbi_preview.png
