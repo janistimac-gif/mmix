@@ -492,9 +492,15 @@ def list_audio_apps(router, skip_pids=()):
             display = key or name
             item = apps.setdefault(key, {'name': display, 'pids': [],
                                          'default_id': default_id,
-                                         'route': None})
+                                         'route': None, 'devices': []})
             if pid not in item['pids']:
                 item['pids'].append(pid)
+            try:
+                dev_id = dev.id
+            except Exception:
+                dev_id = None
+            if dev_id and dev_id not in item['devices']:
+                item['devices'].append(dev_id)
 
     for item in apps.values():
         for pid in item['pids']:
@@ -1013,10 +1019,11 @@ class AppChip:
 class AppsPanel:
     """Plošča pod napravami: katere aplikacije predvajajo zvok in kam."""
 
-    def __init__(self, parent, router, devices, columns=()):
+    def __init__(self, parent, router, devices, columns=(), on_apps=None):
         self.router = router
         self.devices = list(devices)
         self._columns = list(columns)
+        self.on_apps = on_apps
         self._apps = {}
         self._sig = None
         self.chips = []
@@ -1098,7 +1105,8 @@ class AppsPanel:
                 return
         else:
             self._empty = 0
-        sig = tuple((key, tuple(app['pids']), app.get('route'))
+        sig = tuple((key, tuple(app['pids']), app.get('route'),
+                     tuple(app.get('devices', ())))
                     for key, app in apps.items())
         if not force and sig == self._sig:
             return
@@ -1125,6 +1133,8 @@ class AppsPanel:
         if self._width:
             height = 38 + rows * (CHIP_H + 6) + 18
             self.shell.apply(self._width, height)
+        if self.on_apps is not None:
+            self.on_apps(list(apps.values()))
 
     def set_status(self, text, color=SUBTEXT):
         self.status.config(text=text, fg=color)
@@ -1379,6 +1389,38 @@ def short_menu_name(name):
     return name[:37].rstrip() + '\u2026'
 
 
+def short_app_name(name, limit=12):
+    name = (name or '').strip()
+    if len(name) <= limit:
+        return name
+    return name[:limit - 1].rstrip() + '\u2026'
+
+
+def apps_label_text(names):
+    """Največ dve vrstici: prva aplikacija, druga z morebitnim '+N'."""
+    names = [n for n in names if n]
+    if not names:
+        return '\u2014'
+    first = short_app_name(names[0], 12)
+    if len(names) == 1:
+        return first
+    if len(names) == 2:
+        return first + '\n' + short_app_name(names[1], 12)
+    suffix = f' +{len(names) - 1}'
+    second = short_app_name(names[1], 12 - len(suffix)) + suffix
+    return first + '\n' + second
+
+
+def app_count_text(count):
+    if count == 1:
+        return '1 aplikacija'
+    if count == 2:
+        return '2 aplikaciji'
+    if count in (3, 4):
+        return f'{count} aplikacije'
+    return f'{count} aplikacij'
+
+
 def draw_device_icon(c, kind, color):
     """Vektorska ikona naprave (26x26 px), narisana s platnom."""
     c.delete('all')
@@ -1445,6 +1487,7 @@ class DeviceColumn(tk.Frame):
         self.muted = bool(vol.GetMute())
         self.level = 0.0
         self.hold = 0.0
+        self._apps_text = None
         tint = ACCENT if master else SUBTEXT
 
         self.icon = tk.Canvas(self, width=26, height=26, bg=CARD, highlightthickness=0)
@@ -1482,8 +1525,27 @@ class DeviceColumn(tk.Frame):
         self.pct.pack()
         self.mute_btn = MuteButton(self, self.on_mute, active=not self.muted)
         self.mute_btn.pack(pady=(2, 2))
+        # Kaj trenutno predvaja na tej napravi (največ dve vrstici).
+        self.apps_lbl = tk.Label(self, text='', bg=CARD, fg=SUBTEXT2, font=F(8),
+                                 justify='center', wraplength=84, height=2)
+        self.apps_lbl.pack(side='bottom', pady=(0, 1))
+        self.set_apps([])
         self.style_mute()
         self.draw()
+
+    def set_apps(self, names):
+        """Prikaže imena aplikacij, ki predvajajo na tej napravi."""
+        if self.direction != 'Izhod':
+            text = ''
+        elif self.is_master:
+            text = app_count_text(len(names)) if names else '\u2014'
+        else:
+            text = apps_label_text(names)
+        fg = SUBTEXT if text and text != '\u2014' else SUBTEXT2
+        if text == self._apps_text:
+            return
+        self._apps_text = text
+        self.apps_lbl.config(text=text, fg=fg)
 
     def y_of(self, pct):
         return self.TRACK_TOP + self.TRACK_H * (1 - pct / 100)
@@ -1981,7 +2043,8 @@ class App(tk.Tk):
         devices = self.output_devices()
         if self.apps_panel is None:
             self.apps_panel = AppsPanel(self.content, self.router, devices,
-                                        self.columns)
+                                        self.columns,
+                                        on_apps=self.update_channel_apps)
             self.apps_panel.shell.pack(pady=(6, 0))
         else:
             self.apps_panel.set_devices(devices)
@@ -2002,6 +2065,21 @@ class App(tk.Tk):
         for c in self.columns:
             if c is not source and not c.dragging:
                 c.refresh()
+
+    def update_channel_apps(self, apps):
+        """Pod vsak drsnik izpiše, katere aplikacije predvajajo na tej napravi."""
+        groups = {}
+        for app in apps:
+            for dev_id in app.get('devices', ()):
+                groups.setdefault(dev_id, set()).add(app['name'])
+        total = sorted({app['name'] for app in apps}, key=str.lower)
+        for col in self.columns:
+            if col.direction != 'Izhod':
+                col.set_apps([])
+            elif col.is_master:
+                col.set_apps(total)
+            else:
+                col.set_apps(sorted(groups.get(col.key, ()), key=str.lower))
 
     def poll(self):
         for c in self.columns:

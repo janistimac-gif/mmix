@@ -1,8 +1,9 @@
 # mmix
 
 Sodoben temen mešalnik glasnosti za **vse zvočne naprave v Windows** – z master
-kanalom, LED peak meterjem, preimenovanjem kanalov, kovinskimi drsniki in
-**usmerjanjem posameznih aplikacij na izbrano izhodno napravo**.
+kanalom, LED peak meterjem, preimenovanjem kanalov, kovinskimi drsniki,
+**usmerjanjem posameznih aplikacij na izbrano izhodno napravo** in pregledom,
+kaj predvaja na vsaki napravi.
 
 ![mmix](docs/screenshot.png)
 
@@ -40,6 +41,7 @@ ohranijo).
 | 🔇 **Okrogli gumbi za utišanje** | Zeleno jedro = zvok aktiven, rdeče = utišano; moder obroč v barvi `MASTER`. |
 | ✏️ **Preimenovanje** | Dvojni klik na ime (ali svinčnik) odpre vnos; ime se shrani trajno. |
 | 🎧 **Aplikacije** | Spodnja plošča sproti prikazuje programe, ki trenutno predvajajo zvok; aplikacijo preprosto povlečeš na želen kanal. |
+| 🏷️ **Kaj predvaja** | Pod vsakim izhodnim drsnikom so imena aplikacij, ki na tej napravi dejansko predvajajo zvok; MASTER prikaže skupno število. |
 | 🔄 **Osveži naprave** | Znova prebere seznam naprav (npr. po priklopu USB slušalk) – brez podvajanja kartic. |
 | 🎨 **Temna tema** | Lasten videz: zaobljene kartice, kovinski pravokotni drsniki, mehki prelivi, anti-aliasing prek Pillow. |
 
@@ -51,6 +53,8 @@ ohranijo).
 - **Ime** – dvojni klik za preimenovanje, `Enter` potrdi, `Esc` prekliče.
 - **Aplikacija** – povleci jo s plošče na kanal (glej spodaj); klik na gumb
   odpre seznam naprav.
+- **Imena pod drsniki** – sproti kažejo, katere aplikacije predvajajo na
+  posamezni napravi.
 
 ### Usmerjanje aplikacij
 
@@ -74,6 +78,13 @@ napravo z dolgim imenom.
 Spust na **MASTER** (»Vsi izhodni kanali«) pomeni **sistemsko privzeto** – isto
 kot izbira `Sistemsko privzeto` na seznamu. Izbira se shrani v Windows in velja
 tudi po ponovnem zagonu aplikacije.
+
+Pod vsakim izhodnim drsnikom so izpisana imena aplikacij, ki na tej napravi
+**dejansko** predvajajo zvok (največ dve imeni, preostala so prikazana kot
+`+N`). Seznam se osvežuje samodejno; MASTER prikaže skupno število aplikacij.
+Če se gumb v vrstici aplikacije in napis pod drsnikom razlikujeta, aplikacija
+še vedno predvaja na stari napravi – premik bo veljal ob naslednjem zvočnem
+toku.
 
 > **Namig:** Windows izbiro uporabi, ko aplikacija odpre **nov zvočni tok**.
 > V praksi to pomeni, da je treba predvajanje pogosto ustaviti in znova zagnati
@@ -161,7 +172,9 @@ docs/               # posnetki za README
 - Usmerjanje uporablja isti (nedokumentirani) sistemski mehanizem kot
   *Nastavitve → Sistem → Zvok → Glasnost mešalnika*. Nekatere aplikacije
   premik upoštevajo šele ob **naslednjem predvajanju**, redke starejše
-  (`winmm`, PortAudio) pa ostanejo na sistemski napravi.
+  (`winmm`, PortAudio) pa ostanejo na sistemski napravi. Imena pod drsniki
+  zato kažejo **dejansko** napravo predvajanja, ki se lahko do naslednjega
+  toka razlikuje od izbire na gumbu.
 - Peak meter je lahko na nekaterih gonilnikih počasnejši ali manj natančen.
 - Brez podpisa kode: Windows SmartScreen lahko ob prvem zagonu pokaže
   opozorilo »Unknown publisher«.
