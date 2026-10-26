@@ -14,15 +14,18 @@ import json
 import math
 import os
 import sys
+import ctypes
 import tkinter as tk
-from ctypes import POINTER, cast
+import uuid
+from ctypes import (POINTER, byref, c_int, c_long, c_uint32, c_void_p, cast,
+                    wintypes)
 
 import comtypes
 from comtypes import CLSCTX_ALL
 from pycaw.constants import CLSID_MMDeviceEnumerator
 from pycaw.api.endpointvolume import IAudioEndpointVolume, IAudioMeterInformation
 from pycaw.api.mmdeviceapi import IMMDeviceEnumerator
-from pycaw.pycaw import AudioUtilities
+from pycaw.pycaw import (AudioSession, AudioUtilities, IAudioSessionControl2)
 
 E_RENDER = 0
 E_CAPTURE = 1
@@ -268,6 +271,236 @@ def list_devices():
     return result
 
 
+# ---------------------------------------------------------------------------
+# Usmerjanje posameznih aplikacij na izbrano izhodno napravo
+#
+# Windows "privzeto napravo" za posamezno aplikacijo hrani v internem WinRT
+# razredu Windows.Media.Internal.AudioPolicyConfig. To je natanko mehanizem,
+# ki ga uporablja tudi sistemski mešalnik (Nastavitve > Sistem > Zvok >
+# Glasnost mešalnika), zato mmix uporablja isti vmesnik.
+# ---------------------------------------------------------------------------
+PACK_PREFIX = '\\\\?\\SWD#MMDEVAPI#'
+PACK_RENDER = '#{e6327cad-dcec-4949-ae8a-991e976a79d2}'
+POLICY_CLASS = 'Windows.Media.Internal.AudioPolicyConfig'
+POLICY_IID = 'ab3d4648-e242-459f-b02f-541c70306324'
+IID_INSPECTABLE = 'af86e2e0-b12d-4c6a-9c5a-d7aa65101e90'
+SESSION_ACTIVE = 1
+
+
+class _GUID(ctypes.Structure):
+    _fields_ = [('Data1', c_uint32), ('Data2', ctypes.c_uint16),
+                ('Data3', ctypes.c_uint16), ('Data4', ctypes.c_ubyte * 8)]
+
+
+def _guid(text):
+    return _GUID.from_buffer_copy(uuid.UUID(text).bytes_le)
+
+
+def _pack_device(dev_id):
+    return PACK_PREFIX + dev_id + PACK_RENDER
+
+
+def _unpack_device(dev_id):
+    if not dev_id:
+        return None
+    if dev_id.startswith(PACK_PREFIX):
+        dev_id = dev_id[len(PACK_PREFIX):]
+    if dev_id.endswith(PACK_RENDER):
+        dev_id = dev_id[:-len(PACK_RENDER)]
+    return dev_id or None
+
+
+def short_device(name):
+    """Kratka oznaka naprave za gumb v vrstici aplikacije."""
+    if not name:
+        return 'SISTEMSKO'
+    return name.split(' (')[0].strip().upper()[:18]
+
+
+class AudioRouter:
+    """Ovoj okoli Windows.Media.Internal.AudioPolicyConfig (surovi vtable).
+
+    Vmesnik ni dokumentiran, zato kličemo metode po zaporednem mestu v tabeli:
+    SetPersistedDefaultAudioEndpoint = 25, GetPersistedDefaultAudioEndpoint = 26
+    (pred njima je 6 mest za IInspectable in 19 rezerviranih).
+    """
+
+    def __init__(self):
+        self.ok = False
+        self.policy = None
+        self._get = None
+        self._set = None
+        self._create = None
+        self._delete = None
+        self._raw = None
+        try:
+            comtypes.CoInitialize()
+        except Exception:
+            pass
+        try:
+            combase = ctypes.WinDLL('combase.dll')
+            self._create = combase.WindowsCreateString
+            self._create.argtypes = [wintypes.LPCWSTR, c_uint32,
+                                     POINTER(c_void_p)]
+            self._create.restype = c_long
+            self._delete = combase.WindowsDeleteString
+            self._delete.argtypes = [c_void_p]
+            self._raw = combase.WindowsGetStringRawBuffer
+            self._raw.argtypes = [c_void_p, POINTER(c_uint32)]
+            self._raw.restype = wintypes.LPCWSTR
+            activate = combase.RoGetActivationFactory
+            activate.argtypes = [c_void_p, POINTER(_GUID), POINTER(c_void_p)]
+            activate.restype = c_long
+
+            name = self._hstring(POLICY_CLASS)
+            factory = c_void_p()
+            if not name:
+                return
+            hr = activate(name, byref(_guid(IID_INSPECTABLE)), byref(factory))
+            self._delete(name)
+            if hr != 0 or not factory:
+                return
+
+            query = ctypes.WINFUNCTYPE(
+                c_long, c_void_p, POINTER(_GUID), POINTER(c_void_p))(
+                self._slot(factory, 0))
+            policy = c_void_p()
+            hr = query(factory, byref(_guid(POLICY_IID)), byref(policy))
+            if hr != 0 or not policy:
+                return
+            self.policy = policy
+            self._set = ctypes.WINFUNCTYPE(
+                c_long, c_void_p, c_uint32, c_int, c_int, c_void_p)(
+                self._slot(policy, 25))
+            self._get = ctypes.WINFUNCTYPE(
+                c_long, c_void_p, c_uint32, c_int, c_int, POINTER(c_void_p))(
+                self._slot(policy, 26))
+            self.ok = self._set is not None and self._get is not None
+        except Exception:
+            self.ok = False
+
+    @staticmethod
+    def _slot(ptr, index):
+        return ctypes.cast(ptr, POINTER(POINTER(c_void_p))).contents[index]
+
+    def _hstring(self, text):
+        handle = c_void_p()
+        try:
+            if self._create(text, len(text), byref(handle)) != 0:
+                return None
+        except Exception:
+            return None
+        return handle
+
+    def get(self, pid):
+        """Vrne ID naprave, na katero je aplikacija vezana, ali None."""
+        if not self.ok:
+            return None
+        handle = c_void_p()
+        try:
+            hr = self._get(self.policy, pid, E_RENDER, 1, byref(handle))
+            if hr != 0 or not handle:
+                return None
+            length = c_uint32(0)
+            raw = self._raw(handle, byref(length))
+            if not raw:
+                return None
+            return _unpack_device(raw[:length.value])
+        except Exception:
+            return None
+        finally:
+            if handle:
+                try:
+                    self._delete(handle)
+                except Exception:
+                    pass
+
+    def set(self, pid, dev_id=None):
+        """Nastavi napravo za aplikacijo (None = sistemsko privzeto)."""
+        if not self.ok:
+            return False
+        handle = self._hstring(_pack_device(dev_id)) if dev_id else None
+        try:
+            multimedia = self._set(self.policy, pid, E_RENDER, 1, handle)
+            console = self._set(self.policy, pid, E_RENDER, 0, handle)
+        except Exception:
+            return False
+        finally:
+            if handle:
+                try:
+                    self._delete(handle)
+                except Exception:
+                    pass
+        return multimedia == 0 and console == 0
+
+
+def list_audio_apps(router, skip_pids=()):
+    """Vrne slovar aplikacij, ki trenutno predvajajo zvok.
+
+    Ključ je ime izvršljive datoteke (brez .exe), vrednost pa slovar z imenom,
+    seznamom PID-ov (brskalniki imajo več procesov) in izbrano napravo.
+    """
+    apps = {}
+    try:
+        devices = AudioUtilities.GetAllDevices(data_flow=E_RENDER,
+                                               device_state=STATE_ACTIVE)
+    except Exception:
+        return apps
+    try:
+        default_id = AudioUtilities.GetSpeakers().id
+    except Exception:
+        default_id = None
+
+    for dev in devices:
+        try:
+            sessions = dev.AudioSessionManager.GetSessionEnumerator()
+            count = sessions.GetCount()
+        except Exception:
+            continue
+        for i in range(count):
+            try:
+                control = sessions.GetSession(i)
+                if control is None:
+                    continue
+                session = AudioSession(control.QueryInterface(
+                    IAudioSessionControl2))
+                pid = session.ProcessId
+            except Exception:
+                continue
+            if not pid or pid in skip_pids:
+                continue
+            try:
+                if int(session.State) != SESSION_ACTIVE:
+                    continue
+            except Exception:
+                continue
+            process = session.Process
+            name = ''
+            if process is not None:
+                try:
+                    name = process.name()
+                except Exception:
+                    name = ''
+            if not name:
+                name = (session.DisplayName or f'PID {pid}').strip()
+            raw_name = name.lower()
+            key = raw_name[:-4] if raw_name.endswith('.exe') else raw_name
+            display = key or name
+            item = apps.setdefault(key, {'name': display, 'pids': [],
+                                         'default_id': default_id,
+                                         'route': None})
+            if pid not in item['pids']:
+                item['pids'].append(pid)
+
+    for item in apps.values():
+        for pid in item['pids']:
+            route = router.get(pid)
+            if route:
+                item['route'] = route
+                break
+    return dict(sorted(apps.items()))
+
+
 class NameStore:
     """Shranjuje imena kanalov, ki jih je uporabnik spremenil (JSON v %APPDATA%)."""
 
@@ -416,15 +649,20 @@ class RoundedCard(tk.Canvas):
     RADIUS = 20
     PAD = 6
 
-    def __init__(self, parent, accent=False, group=None):
+    def __init__(self, parent, accent=False, group=None, fill=CARD,
+                 radius=None, auto=True):
         super().__init__(parent, bg=BG, highlightthickness=0, bd=0)
         self.accent = accent
+        self.fill = fill
         self._size = None
         self.group = group if group is not None else []
         self.group.append(self)
-        self.inner = tk.Frame(self, bg=CARD)
+        if radius is not None:
+            self.RADIUS = radius
+        self.inner = tk.Frame(self, bg=fill)
         self.win = self.create_window(self.PAD, self.PAD, window=self.inner, anchor='nw')
-        self.inner.bind('<Configure>', lambda e: self.fit())
+        if auto:
+            self.inner.bind('<Configure>', lambda e: self.fit())
 
     def fit(self):
         members = [c for c in self.group if c.winfo_exists()]
@@ -445,10 +683,10 @@ class RoundedCard(tk.Canvas):
         x0, y0, x1, y1, r = 1, 1, w - 1, h - 1, self.RADIUS
         pts = [x0 + r, y0, x1 - r, y0, x1, y0, x1, y0 + r, x1, y1 - r, x1, y1,
                x1 - r, y1, x0 + r, y1, x0, y1, x0, y1 - r, x0, y0 + r, x0, y0]
-        self.create_polygon(pts, smooth=True, fill=CARD, tags='bg',
-                            outline=mix(ACCENT, CARD, 0.25) if self.accent else CARD_EDGE,
+        self.create_polygon(pts, smooth=True, fill=self.fill, tags='bg',
+                            outline=mix(ACCENT, self.fill, 0.25) if self.accent else CARD_EDGE,
                             width=2 if self.accent else 1)
-        sheen = mix(ACCENT, CARD, 0.45) if self.accent else mix(CARD, '#ffffff', 0.07)
+        sheen = mix(ACCENT, self.fill, 0.45) if self.accent else mix(self.fill, '#ffffff', 0.07)
         self.create_line(x0 + r, y0 + 2, x1 - r, y0 + 2, fill=sheen, tags='bg')
         self.tag_lower('bg')
 
@@ -683,6 +921,242 @@ class MuteButton(tk.Canvas):
                    fill=glyph, width=lw)
 
         return img.resize((s, s), Image.LANCZOS)
+
+
+CHIP_FILL = mix(CARD, '#ffffff', 0.05)
+CHIP_W = 182
+CHIP_H = 56
+APPS_COLS = 6
+
+
+class AppChip:
+    """Ena aplikacija v spodnji plošči: ime procesa + gumb za izbiro izhoda."""
+
+    def __init__(self, parent, app, route_text, on_pick):
+        self.app = app
+        self.card = RoundedCard(parent, group=[], fill=CHIP_FILL, radius=11,
+                                auto=False)
+        self.card.apply(CHIP_W, CHIP_H)
+        body = self.card.inner
+        name = app['name']
+        if len(name) > 20:
+            name = name[:19].rstrip() + '\u2026'
+        self.name = tk.Label(body, text=name, bg=CHIP_FILL, fg=TEXT,
+                             font=F(9, 'bold'), anchor='w')
+        self.name.pack(fill='x', padx=2)
+        self.button = PillButton(
+            body, route_text, lambda: on_pick(self), ACCENT, ACCENT_HOVER,
+            fg=ACCENT, fg_hover='#e8f7ff', width=CHIP_W - 28, height=21,
+            font=F(8, 'bold'), parent_bg=CHIP_FILL, ghost=True, radius=7)
+        self.button.pack(pady=(3, 0))
+
+
+class AppsPanel:
+    """Plošča pod napravami: katere aplikacije predvajajo zvok in kam."""
+
+    def __init__(self, parent, router, devices):
+        self.router = router
+        self.devices = list(devices)
+        self._apps = {}
+        self._sig = None
+        self.chips = []
+        self._cols = APPS_COLS
+        self._width = 0
+        self._menu = None
+        self._status_job = None
+        self._empty = 0
+        self.shell = RoundedCard(parent, group=[], auto=False)
+        host = self.shell.inner
+
+        head = tk.Frame(host, bg=CARD)
+        head.pack(fill='x', padx=14, pady=(6, 0))
+        tk.Label(head, text='APLIKACIJE', bg=CARD, fg=ACCENT,
+                 font=F(10, 'bold')).pack(side='left')
+        tk.Label(head, text='predvajajo zvok', bg=CARD, fg=SUBTEXT,
+                 font=F(9)).pack(side='left', padx=(8, 0))
+        self.status = tk.Label(head, text='', bg=CARD, fg=SUBTEXT,
+                               font=F(9), anchor='e')
+        self.status.pack(side='right')
+        if not router.ok:
+            self.status.config(text='Usmerjanje ni podprto', fg=YELLOW)
+
+        self.grid = tk.Frame(host, bg=CARD)
+        self.grid.pack(fill='x', padx=10, pady=(5, 0))
+        self.hint = tk.Label(
+            host, text='Namig: pri nekaterih aplikacijah premik velja ob '
+                       'naslednjem predvajanju.',
+            bg=CARD, fg=SUBTEXT2, font=F(8), anchor='w')
+        self.hint.pack(fill='x', padx=14, pady=(3, 6))
+
+    # -- razporeditev -----------------------------------------------------
+    def resize(self, width):
+        if width <= 0:
+            return
+        if width != self._width:
+            self._width = width
+            cols = max(1, min(APPS_COLS, (width - 24) // (CHIP_W + 6)))
+            if cols != self._cols:
+                self._cols = cols
+                self._sig = None
+        self.refresh(force=True)
+
+    def set_devices(self, devices):
+        if devices != self.devices:
+            self.devices = list(devices)
+            self._sig = None
+
+    def device_name(self, dev_id):
+        for did, name in self.devices:
+            if did == dev_id:
+                return name
+        return None
+
+    def route_text(self, app):
+        route = app.get('route')
+        if not route:
+            return 'SISTEMSKO'
+        name = self.device_name(route)
+        return short_device(name) if name else 'DRUGA'
+
+    # -- vsebina ----------------------------------------------------------
+    def refresh(self, force=False):
+        if self._menu is not None and not force:
+            return
+        apps = list_audio_apps(self.router, skip_pids={os.getpid()})
+        if not apps and self._apps:
+            # Kratkotrajen izpad (npr. Windows med premikom sejo na novo ustvari)
+            # ne sme povzročiti utripanja plošče.
+            self._empty += 1
+            if self._empty < 2:
+                return
+        else:
+            self._empty = 0
+        sig = tuple((key, tuple(app['pids']), app.get('route'))
+                    for key, app in apps.items())
+        if not force and sig == self._sig:
+            return
+        self._sig = sig
+        self._apps = apps
+
+        for child in self.grid.winfo_children():
+            child.destroy()
+        self.chips = []
+        chips = list(apps.values())
+        if not chips:
+            tk.Label(self.grid, text='Trenutno ne predvaja nobena aplikacija.',
+                     bg=CARD, fg=SUBTEXT2, font=F(9), anchor='w').grid(
+                row=0, column=0, sticky='w', padx=4, pady=4)
+            rows = 1
+        else:
+            for index, app in enumerate(chips):
+                chip = AppChip(self.grid, app, self.route_text(app), self.open_menu)
+                chip.card.grid(row=index // self._cols, column=index % self._cols,
+                               padx=3, pady=3)
+                self.chips.append(chip)
+            rows = (len(chips) + self._cols - 1) // self._cols
+        if self._width:
+            height = 38 + rows * (CHIP_H + 6) + 18
+            self.shell.apply(self._width, height)
+
+    def set_status(self, text, color=SUBTEXT):
+        self.status.config(text=text, fg=color)
+        if self._status_job:
+            try:
+                self.after_cancel(self._status_job)
+            except Exception:
+                pass
+            self._status_job = None
+        if text:
+            self._status_job = self.status.after(
+                7000, lambda: self.status.config(text=''))
+
+    # -- izbira naprave ---------------------------------------------------
+    def open_menu(self, chip):
+        self.close_menu()
+        app = chip.app
+        win = tk.Toplevel(chip.button)
+        win.withdraw()
+        win.overrideredirect(True)
+        win.configure(bg=BG)
+        try:
+            win.attributes('-topmost', True)
+        except Exception:
+            pass
+        body = tk.Frame(win, bg=BG)
+        body.pack(fill='both', expand=True, padx=1, pady=1)
+        current = app.get('route')
+        entries = [(None, 'Sistemsko privzeto')]
+        entries += [(dev_id, name) for dev_id, name in self.devices]
+        for index, (dev_id, name) in enumerate(entries):
+            if index == 1:
+                tk.Frame(body, bg=CARD_EDGE, height=1).pack(fill='x', pady=3)
+            mark = '\u2713' if (dev_id or None) == (current or None) else ' '
+            label = tk.Label(
+                body, text=f'{mark}  {short_menu_name(name)}', bg=BG, fg=TEXT,
+                font=F(9), anchor='w', padx=10, pady=5)
+            label.pack(fill='x')
+            label.bind('<Enter>', lambda e, w=label: w.config(bg=BTN_HOVER))
+            label.bind('<Leave>', lambda e, w=label: w.config(bg=BG))
+            label.bind('<Button-1>',
+                       lambda e, d=dev_id, a=app: self._choose(a, d))
+
+        win.update_idletasks()
+        height = body.winfo_reqheight() + 2
+        width = max(240, body.winfo_reqwidth() + 2)
+        x = chip.button.winfo_rootx()
+        y = chip.button.winfo_rooty() + chip.button.winfo_height() + 4
+        screen_w = self.shell.winfo_screenwidth()
+        screen_h = self.shell.winfo_screenheight()
+        x = max(8, min(x, screen_w - width - 8))
+        if y + height > screen_h - 8:
+            y = chip.button.winfo_rooty() - height - 4
+        y = max(8, y)
+        win.geometry(f'{width}x{height}+{x}+{y}')
+        win.deiconify()
+        win.lift()
+        win.grab_set()
+        win.bind('<Escape>', lambda e: self.close_menu())
+        win.bind('<Button-1>', lambda e: self.close_menu())
+        self._menu = win
+
+    def close_menu(self):
+        win = self._menu
+        self._menu = None
+        if win is not None:
+            try:
+                win.grab_release()
+            except Exception:
+                pass
+            try:
+                win.destroy()
+            except Exception:
+                pass
+
+    def _choose(self, app, dev_id):
+        self.close_menu()
+        self.apply(app, dev_id)
+        return 'break'
+
+    def apply(self, app, dev_id):
+        if not self.router.ok:
+            self.set_status('Usmerjanje ni podprto na tem sistemu', RED)
+            return
+        moved = 0
+        for pid in app['pids']:
+            if self.router.set(pid, dev_id):
+                moved += 1
+        label = short_device(self.device_name(dev_id)) if dev_id else 'SISTEMSKO'
+        if moved:
+            self.set_status(f"{app['name']} \u2192 {label}", ACCENT)
+        else:
+            self.set_status('Aplikacija trenutno ne predvaja zvoka', RED)
+        self.refresh(force=True)
+
+
+def short_menu_name(name):
+    if len(name) <= 38:
+        return name
+    return name[:37].rstrip() + '\u2026'
 
 
 def draw_device_icon(c, kind, color):
@@ -1095,6 +1569,9 @@ class App(tk.Tk):
         self.columns = []
         self.cards = []
         self.names = NameStore()
+        self.router = AudioRouter()
+        self.apps_panel = None
+        self._apps_timer = None
         self.meta = load_frame_meta() if USE_NEON_FRAME else None
         if self.meta:
             BG = self.meta['bg']
@@ -1204,7 +1681,7 @@ class App(tk.Tk):
         text.pack(side='left')
         title = tk.Label(text, text='mmix', bg=BG, fg=TEXT, font=F(15, 'bold'))
         title.pack(anchor='w')
-        sub = tk.Label(text, text='Glasnost in peak meter vseh avdio naprav',
+        sub = tk.Label(text, text='Glasnost, peak meter in usmerjanje aplikacij',
                        bg=BG, fg=SUBTEXT, font=F(9))
         sub.pack(anchor='w')
         if self.meta:
@@ -1268,6 +1745,32 @@ class App(tk.Tk):
             col.pack(fill='both', expand=True)
             shell.pack(side='left', padx=5, pady=4)
             self.columns.append(col)
+        self.sync_apps_panel()
+
+    def output_devices(self):
+        try:
+            return [(d.id, d.FriendlyName) for d in AudioUtilities.GetAllDevices(
+                data_flow=E_RENDER, device_state=STATE_ACTIVE)]
+        except Exception:
+            return []
+
+    def sync_apps_panel(self):
+        devices = self.output_devices()
+        if self.apps_panel is None:
+            self.apps_panel = AppsPanel(self.content, self.router, devices)
+            self.apps_panel.shell.pack(pady=(6, 0))
+        else:
+            self.apps_panel.set_devices(devices)
+        self.update_idletasks()
+        self.apps_panel.resize(self.holder.winfo_reqwidth())
+        if self._apps_timer is None:
+            self._apps_timer = self.after(1500, self.poll_apps)
+
+    def poll_apps(self):
+        self._apps_timer = None
+        if self.apps_panel is not None:
+            self.apps_panel.refresh()
+            self._apps_timer = self.after(1500, self.poll_apps)
 
     def sync_columns(self, source):
         """Ko se spremeni eden kanal, osveži ostale (npr. master ob premiku naprave)."""

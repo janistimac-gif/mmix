@@ -5,7 +5,7 @@
 ; ------------------------------------------------------------------
 
 #define MyAppName        "mmix"
-#define MyAppVersion     "1.0.0"
+#define MyAppVersion     "1.1.0"
 #define MyAppPublisher   "JBJ"
 #define MyAppExeName     "mmix.exe"
 ; Fiksni AppId – omogoča nadgradnjo brez podvojenih vnosov v "Programi".
@@ -17,7 +17,7 @@ AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppVerName={#MyAppName} {#MyAppVersion}
 AppPublisher={#MyAppPublisher}
-AppComments=Krmilnik glasnosti za Windows (predelava VolumeMixer)
+AppComments=Krmilnik glasnosti in usmerjanje aplikacij za Windows (predelava VolumeMixer)
 DefaultDirName={autopf}\{#MyAppName}
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
