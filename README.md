@@ -1,4 +1,4 @@
-# mmix
+﻿# mmix
 
 Sodoben temen mešalnik glasnosti za **vse zvočne naprave v Windows** – z master
 kanalom, LED peak meterjem, preimenovanjem kanalov, kovinskimi drsniki,
@@ -44,6 +44,7 @@ ohranijo).
 | 🏷️ **Kaj predvaja** | Pod vsakim izhodnim drsnikom so imena aplikacij, ki na tej napravi dejansko predvajajo zvok; MASTER prikaže skupno število. |
 | 🔄 **Osveži naprave** | Znova prebere seznam naprav (npr. po priklopu USB slušalk) – brez podvajanja kartic. |
 | 🎨 **Temna tema** | Lasten videz: zaobljene kartice, kovinski pravokotni drsniki, mehki prelivi, anti-aliasing prek Pillow. |
+| ⌨️ **Globalne bližnjice** | Glasneje, tišje, utišaj, prikaži mmix in osveži naprave delujejo tudi, ko je mmix v ozadju; kombinacije se urejajo v oknu **Bližnjice**. |
 
 ### Upravljanje
 
@@ -55,6 +56,40 @@ ohranijo).
   odpre seznam naprav.
 - **Imena pod drsniki** – sproti kažejo, katere aplikacije predvajajo na
   posamezni napravi.
+- **Bližnjice** – gumb v glavi odpre urejanje globalnih kombinacij.
+
+### Globalne bližnjice
+
+| Dejanje | Privzeto |
+|---|---|
+| Glasneje | `Ctrl+Alt+Shift+Up` |
+| Tišje | `Ctrl+Alt+Shift+Down` |
+| Utišaj / vklopi zvok | `Ctrl+Alt+Shift+M` |
+| Prikaži mmix | `Ctrl+Alt+Shift+O` |
+| Osveži naprave | `Ctrl+Alt+Shift+R` |
+
+Bližnjice delujejo **globalno**, tudi ko je mmix minimiziran ali pokrit z
+drugim oknom. Glasnost spreminjata po 5 % na pritisk in delujeta na **MASTER**
+(vse izhodne naprave hkrati). Ob spremembi se prikaže majhen OSD s trenutno
+glasnostjo.
+
+Kombinacije spremeniš z gumbom **Bližnjice** v glavi okna: klikni trenutno
+kombinacijo in pritisni novo. Shranjene so v
+`%APPDATA%\VolumeMixer\hotkeys.json`, zato ostanejo tudi po ponovnem zagonu.
+Če kombinacijo že uporablja druga aplikacija, mmix ob zagonu pokaže opozorilo;
+izberi drugo.
+
+Za **Stream Controller (SOOMFON)** je pripravljen vtičnik **mmix**: v zavihku
+*Keys* se prikaže kot svoja kategorija z 14 dejanji (glasneje / tišje / utišaj
+za MASTER, ZVOČNIKI, SLUŠALKE in ZASLON ter *Prikaži mmix* in *Osveži naprave*).
+Vsako dejanje ima svojo ikono, zato jih samo povlečeš na tipke. Vtičnik se z
+mmixom pogovarja po lokalnem mostu `127.0.0.1:28197`, zato mora mmix teči (lahko
+minimiziran).
+
+Za **Stream Deck** uporabi akcijo *Hotkey* in pritisni isto kombinacijo. Ikone
+so pripravljene v mapi [`streamdeck/`](streamdeck/README.md): mapa
+`streamdock/mmix.sdIconPack` je paket za Stream Controller,
+`mmix.streamDeckIconPack` pa za Elgato Stream Deck.
 
 ### Usmerjanje aplikacij
 
@@ -129,13 +164,16 @@ python mmix.py
 
 ```powershell
 python -m PyInstaller --noconfirm --clean --onefile --windowed `
-    --name mmix --icon mmicon.ico `
-    --add-data "mmicon.ico;." --add-data "mmicon_header.png;." `
+    --name mmix --icon "$PWD\mmicon.ico" `
+    --add-data "$PWD\mmicon.ico;." --add-data "$PWD\mmicon_header.png;." `
     --exclude-module numpy --exclude-module sounddevice `
     --exclude-module scipy --exclude-module matplotlib --exclude-module pandas `
     --distpath . --workpath "$env:TEMP\mmix_build\work" `
     --specpath "$env:TEMP\mmix_build" mmix.py
 ```
+
+> Poti pri `--add-data` in `--icon` so namerno absolutne (`$PWD`), ker
+> PyInstaller relativne poti računa glede na `--specpath` (tu je v `%TEMP%`).
 
 > PyInstaller v `.exe` vključi vse potrebno (Python, Tk, pycaw, Pillow), zato
 > na ciljnem računalniku ni treba ničesar nameščati. `--onefile` pomeni nekoliko
@@ -157,12 +195,16 @@ brez podvojenih vnosov.
 ### Struktura
 
 ```
-mmix.py             # celotna aplikacija (UI + pycaw + renderiranje + usmerjanje)
-mmix_setup.iss      # skripta za Inno Setup
-mmicon.ico          # ikona aplikacije in namestitvenega programa
-mmicon_header.png   # logotip v glavi okna
-requirements.txt    # Python odvisnosti
-docs/               # posnetki za README
+mmix.py                  # celotna aplikacija (UI + pycaw + bližnjice + usmerjanje)
+mmix_setup.iss           # skripta za Inno Setup
+make_streamdeck_icons.py # generator ikon za Stream Deck / Stream Dock
+fix_mm_plugin.py         # zgradi vtičnik mmix za Stream Controller (manifest + stran)
+make_mmix_plugin_keys.py # ikone dejanj vtičnika (144 × 144 PNG)
+mmicon.ico               # ikona aplikacije in namestitvenega programa
+mmicon_header.png        # logotip v glavi okna
+requirements.txt         # Python odvisnosti
+streamdeck/              # ikone za Stream Deck + Stream Dock in navodila
+docs/                    # posnetki za README
 ```
 
 ---
@@ -176,6 +218,9 @@ docs/               # posnetki za README
   zato kažejo **dejansko** napravo predvajanja, ki se lahko do naslednjega
   toka razlikuje od izbire na gumbu.
 - Peak meter je lahko na nekaterih gonilnikih počasnejši ali manj natančen.
+- Globalne bližnjice so vezane na eno kombinacijo na dejanje. Če isto
+  kombinacijo uporablja druga aplikacija, je mmix ne more registrirati – ob
+  zagonu pokaže opozorilo, novo kombinacijo pa izbereš v oknu **Bližnjice**.
 - Brez podpisa kode: Windows SmartScreen lahko ob prvem zagonu pokaže
   opozorilo »Unknown publisher«.
 

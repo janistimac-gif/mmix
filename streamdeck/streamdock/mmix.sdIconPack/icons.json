@@ -1,0 +1,561 @@
+[
+  {
+    "path": "volume_up.png",
+    "name": "Glasneje",
+    "tags": [
+      "mmix",
+      "glasnost",
+      "glasneje",
+      "volume up",
+      "stream dock"
+    ]
+  },
+  {
+    "path": "volume_up_clean.png",
+    "name": "Glasneje (brez napisa)",
+    "tags": [
+      "mmix",
+      "glasnost",
+      "glasneje",
+      "volume up",
+      "brez napisa",
+      "stream dock"
+    ]
+  },
+  {
+    "path": "volume_down.png",
+    "name": "Ti\u0161je",
+    "tags": [
+      "mmix",
+      "glasnost",
+      "ti\u0161je",
+      "volume down",
+      "stream dock"
+    ]
+  },
+  {
+    "path": "volume_down_clean.png",
+    "name": "Ti\u0161je (brez napisa)",
+    "tags": [
+      "mmix",
+      "glasnost",
+      "ti\u0161je",
+      "volume down",
+      "brez napisa",
+      "stream dock"
+    ]
+  },
+  {
+    "path": "mute.png",
+    "name": "Uti\u0161aj",
+    "tags": [
+      "mmix",
+      "glasnost",
+      "uti\u0161aj",
+      "mute",
+      "stream dock"
+    ]
+  },
+  {
+    "path": "mute_clean.png",
+    "name": "Uti\u0161aj (brez napisa)",
+    "tags": [
+      "mmix",
+      "glasnost",
+      "uti\u0161aj",
+      "mute",
+      "brez napisa",
+      "stream dock"
+    ]
+  },
+  {
+    "path": "sound.png",
+    "name": "Zvok",
+    "tags": [
+      "mmix",
+      "glasnost",
+      "zvok",
+      "sound",
+      "unmute",
+      "stream dock"
+    ]
+  },
+  {
+    "path": "sound_clean.png",
+    "name": "Zvok (brez napisa)",
+    "tags": [
+      "mmix",
+      "glasnost",
+      "zvok",
+      "sound",
+      "unmute",
+      "brez napisa",
+      "stream dock"
+    ]
+  },
+  {
+    "path": "master.png",
+    "name": "Master",
+    "tags": [
+      "mmix",
+      "glasnost",
+      "master",
+      "vsi izhodi",
+      "stream dock"
+    ]
+  },
+  {
+    "path": "master_clean.png",
+    "name": "Master (brez napisa)",
+    "tags": [
+      "mmix",
+      "glasnost",
+      "master",
+      "vsi izhodi",
+      "brez napisa",
+      "stream dock"
+    ]
+  },
+  {
+    "path": "ch_speakers_up.png",
+    "name": "ZVO\u010cNIKI +",
+    "tags": [
+      "mmix",
+      "kanal",
+      "channel",
+      "zvo\u010dniki",
+      "zvocniki",
+      "speakers",
+      "speaker",
+      "glasneje",
+      "volume up",
+      "up",
+      "plus",
+      "stream dock"
+    ]
+  },
+  {
+    "path": "ch_speakers_up_clean.png",
+    "name": "ZVO\u010cNIKI + (brez napisa)",
+    "tags": [
+      "mmix",
+      "kanal",
+      "channel",
+      "zvo\u010dniki",
+      "zvocniki",
+      "speakers",
+      "speaker",
+      "glasneje",
+      "volume up",
+      "up",
+      "plus",
+      "brez napisa",
+      "stream dock"
+    ]
+  },
+  {
+    "path": "ch_speakers_down.png",
+    "name": "ZVO\u010cNIKI -",
+    "tags": [
+      "mmix",
+      "kanal",
+      "channel",
+      "zvo\u010dniki",
+      "zvocniki",
+      "speakers",
+      "speaker",
+      "ti\u0161je",
+      "volume down",
+      "down",
+      "minus",
+      "stream dock"
+    ]
+  },
+  {
+    "path": "ch_speakers_down_clean.png",
+    "name": "ZVO\u010cNIKI - (brez napisa)",
+    "tags": [
+      "mmix",
+      "kanal",
+      "channel",
+      "zvo\u010dniki",
+      "zvocniki",
+      "speakers",
+      "speaker",
+      "ti\u0161je",
+      "volume down",
+      "down",
+      "minus",
+      "brez napisa",
+      "stream dock"
+    ]
+  },
+  {
+    "path": "ch_speakers_mute.png",
+    "name": "ZVO\u010cNIKI \u00d7",
+    "tags": [
+      "mmix",
+      "kanal",
+      "channel",
+      "zvo\u010dniki",
+      "zvocniki",
+      "speakers",
+      "speaker",
+      "uti\u0161aj",
+      "mute",
+      "x",
+      "stream dock"
+    ]
+  },
+  {
+    "path": "ch_speakers_mute_clean.png",
+    "name": "ZVO\u010cNIKI \u00d7 (brez napisa)",
+    "tags": [
+      "mmix",
+      "kanal",
+      "channel",
+      "zvo\u010dniki",
+      "zvocniki",
+      "speakers",
+      "speaker",
+      "uti\u0161aj",
+      "mute",
+      "x",
+      "brez napisa",
+      "stream dock"
+    ]
+  },
+  {
+    "path": "ch_headphones_up.png",
+    "name": "SLU\u0160ALKE +",
+    "tags": [
+      "mmix",
+      "kanal",
+      "channel",
+      "slu\u0161alke",
+      "slusalke",
+      "headphones",
+      "headset",
+      "glasneje",
+      "volume up",
+      "up",
+      "plus",
+      "stream dock"
+    ]
+  },
+  {
+    "path": "ch_headphones_up_clean.png",
+    "name": "SLU\u0160ALKE + (brez napisa)",
+    "tags": [
+      "mmix",
+      "kanal",
+      "channel",
+      "slu\u0161alke",
+      "slusalke",
+      "headphones",
+      "headset",
+      "glasneje",
+      "volume up",
+      "up",
+      "plus",
+      "brez napisa",
+      "stream dock"
+    ]
+  },
+  {
+    "path": "ch_headphones_down.png",
+    "name": "SLU\u0160ALKE -",
+    "tags": [
+      "mmix",
+      "kanal",
+      "channel",
+      "slu\u0161alke",
+      "slusalke",
+      "headphones",
+      "headset",
+      "ti\u0161je",
+      "volume down",
+      "down",
+      "minus",
+      "stream dock"
+    ]
+  },
+  {
+    "path": "ch_headphones_down_clean.png",
+    "name": "SLU\u0160ALKE - (brez napisa)",
+    "tags": [
+      "mmix",
+      "kanal",
+      "channel",
+      "slu\u0161alke",
+      "slusalke",
+      "headphones",
+      "headset",
+      "ti\u0161je",
+      "volume down",
+      "down",
+      "minus",
+      "brez napisa",
+      "stream dock"
+    ]
+  },
+  {
+    "path": "ch_headphones_mute.png",
+    "name": "SLU\u0160ALKE \u00d7",
+    "tags": [
+      "mmix",
+      "kanal",
+      "channel",
+      "slu\u0161alke",
+      "slusalke",
+      "headphones",
+      "headset",
+      "uti\u0161aj",
+      "mute",
+      "x",
+      "stream dock"
+    ]
+  },
+  {
+    "path": "ch_headphones_mute_clean.png",
+    "name": "SLU\u0160ALKE \u00d7 (brez napisa)",
+    "tags": [
+      "mmix",
+      "kanal",
+      "channel",
+      "slu\u0161alke",
+      "slusalke",
+      "headphones",
+      "headset",
+      "uti\u0161aj",
+      "mute",
+      "x",
+      "brez napisa",
+      "stream dock"
+    ]
+  },
+  {
+    "path": "ch_monitor_up.png",
+    "name": "ZASLON +",
+    "tags": [
+      "mmix",
+      "kanal",
+      "channel",
+      "zaslon",
+      "monitor",
+      "display",
+      "hdmi",
+      "glasneje",
+      "volume up",
+      "up",
+      "plus",
+      "stream dock"
+    ]
+  },
+  {
+    "path": "ch_monitor_up_clean.png",
+    "name": "ZASLON + (brez napisa)",
+    "tags": [
+      "mmix",
+      "kanal",
+      "channel",
+      "zaslon",
+      "monitor",
+      "display",
+      "hdmi",
+      "glasneje",
+      "volume up",
+      "up",
+      "plus",
+      "brez napisa",
+      "stream dock"
+    ]
+  },
+  {
+    "path": "ch_monitor_down.png",
+    "name": "ZASLON -",
+    "tags": [
+      "mmix",
+      "kanal",
+      "channel",
+      "zaslon",
+      "monitor",
+      "display",
+      "hdmi",
+      "ti\u0161je",
+      "volume down",
+      "down",
+      "minus",
+      "stream dock"
+    ]
+  },
+  {
+    "path": "ch_monitor_down_clean.png",
+    "name": "ZASLON - (brez napisa)",
+    "tags": [
+      "mmix",
+      "kanal",
+      "channel",
+      "zaslon",
+      "monitor",
+      "display",
+      "hdmi",
+      "ti\u0161je",
+      "volume down",
+      "down",
+      "minus",
+      "brez napisa",
+      "stream dock"
+    ]
+  },
+  {
+    "path": "ch_monitor_mute.png",
+    "name": "ZASLON \u00d7",
+    "tags": [
+      "mmix",
+      "kanal",
+      "channel",
+      "zaslon",
+      "monitor",
+      "display",
+      "hdmi",
+      "uti\u0161aj",
+      "mute",
+      "x",
+      "stream dock"
+    ]
+  },
+  {
+    "path": "ch_monitor_mute_clean.png",
+    "name": "ZASLON \u00d7 (brez napisa)",
+    "tags": [
+      "mmix",
+      "kanal",
+      "channel",
+      "zaslon",
+      "monitor",
+      "display",
+      "hdmi",
+      "uti\u0161aj",
+      "mute",
+      "x",
+      "brez napisa",
+      "stream dock"
+    ]
+  },
+  {
+    "path": "device.png",
+    "name": "Naprava",
+    "tags": [
+      "mmix",
+      "naprava",
+      "izhod",
+      "device",
+      "stream dock"
+    ]
+  },
+  {
+    "path": "device_clean.png",
+    "name": "Naprava (brez napisa)",
+    "tags": [
+      "mmix",
+      "naprava",
+      "izhod",
+      "device",
+      "brez napisa",
+      "stream dock"
+    ]
+  },
+  {
+    "path": "refresh.png",
+    "name": "Osve\u017ei",
+    "tags": [
+      "mmix",
+      "osve\u017ei",
+      "refresh",
+      "naprave",
+      "stream dock"
+    ]
+  },
+  {
+    "path": "refresh_clean.png",
+    "name": "Osve\u017ei (brez napisa)",
+    "tags": [
+      "mmix",
+      "osve\u017ei",
+      "refresh",
+      "naprave",
+      "brez napisa",
+      "stream dock"
+    ]
+  },
+  {
+    "path": "apps.png",
+    "name": "Aplikacije",
+    "tags": [
+      "mmix",
+      "aplikacije",
+      "apps",
+      "usmerjanje",
+      "stream dock"
+    ]
+  },
+  {
+    "path": "apps_clean.png",
+    "name": "Aplikacije (brez napisa)",
+    "tags": [
+      "mmix",
+      "aplikacije",
+      "apps",
+      "usmerjanje",
+      "brez napisa",
+      "stream dock"
+    ]
+  },
+  {
+    "path": "open.png",
+    "name": "mmix",
+    "tags": [
+      "mmix",
+      "odpri",
+      "show",
+      "aplikacija",
+      "stream dock"
+    ]
+  },
+  {
+    "path": "open_clean.png",
+    "name": "mmix (brez napisa)",
+    "tags": [
+      "mmix",
+      "odpri",
+      "show",
+      "aplikacija",
+      "brez napisa",
+      "stream dock"
+    ]
+  },
+  {
+    "path": "blank.png",
+    "name": "Prazno",
+    "tags": [
+      "mmix",
+      "prazno",
+      "blank",
+      "ozadje",
+      "stream dock"
+    ]
+  },
+  {
+    "path": "blank_clean.png",
+    "name": "Prazno (brez napisa)",
+    "tags": [
+      "mmix",
+      "prazno",
+      "blank",
+      "ozadje",
+      "brez napisa",
+      "stream dock"
+    ]
+  }
+]

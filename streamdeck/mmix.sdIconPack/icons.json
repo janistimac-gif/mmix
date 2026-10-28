@@ -1,0 +1,561 @@
+[
+  {
+    "path": "volume_up.png",
+    "name": "Glasneje",
+    "tags": [
+      "mmix",
+      "glasnost",
+      "glasneje",
+      "volume up",
+      "stream deck"
+    ]
+  },
+  {
+    "path": "volume_up_clean.png",
+    "name": "Glasneje (brez napisa)",
+    "tags": [
+      "mmix",
+      "glasnost",
+      "glasneje",
+      "volume up",
+      "brez napisa",
+      "stream deck"
+    ]
+  },
+  {
+    "path": "volume_down.png",
+    "name": "Tišje",
+    "tags": [
+      "mmix",
+      "glasnost",
+      "tišje",
+      "volume down",
+      "stream deck"
+    ]
+  },
+  {
+    "path": "volume_down_clean.png",
+    "name": "Tišje (brez napisa)",
+    "tags": [
+      "mmix",
+      "glasnost",
+      "tišje",
+      "volume down",
+      "brez napisa",
+      "stream deck"
+    ]
+  },
+  {
+    "path": "mute.png",
+    "name": "Utišaj",
+    "tags": [
+      "mmix",
+      "glasnost",
+      "utišaj",
+      "mute",
+      "stream deck"
+    ]
+  },
+  {
+    "path": "mute_clean.png",
+    "name": "Utišaj (brez napisa)",
+    "tags": [
+      "mmix",
+      "glasnost",
+      "utišaj",
+      "mute",
+      "brez napisa",
+      "stream deck"
+    ]
+  },
+  {
+    "path": "sound.png",
+    "name": "Zvok",
+    "tags": [
+      "mmix",
+      "glasnost",
+      "zvok",
+      "sound",
+      "unmute",
+      "stream deck"
+    ]
+  },
+  {
+    "path": "sound_clean.png",
+    "name": "Zvok (brez napisa)",
+    "tags": [
+      "mmix",
+      "glasnost",
+      "zvok",
+      "sound",
+      "unmute",
+      "brez napisa",
+      "stream deck"
+    ]
+  },
+  {
+    "path": "master.png",
+    "name": "Master",
+    "tags": [
+      "mmix",
+      "glasnost",
+      "master",
+      "vsi izhodi",
+      "stream deck"
+    ]
+  },
+  {
+    "path": "master_clean.png",
+    "name": "Master (brez napisa)",
+    "tags": [
+      "mmix",
+      "glasnost",
+      "master",
+      "vsi izhodi",
+      "brez napisa",
+      "stream deck"
+    ]
+  },
+  {
+    "path": "ch_speakers_up.png",
+    "name": "ZVOČNIKI +",
+    "tags": [
+      "mmix",
+      "kanal",
+      "channel",
+      "zvočniki",
+      "zvocniki",
+      "speakers",
+      "speaker",
+      "glasneje",
+      "volume up",
+      "up",
+      "plus",
+      "stream deck"
+    ]
+  },
+  {
+    "path": "ch_speakers_up_clean.png",
+    "name": "ZVOČNIKI + (brez napisa)",
+    "tags": [
+      "mmix",
+      "kanal",
+      "channel",
+      "zvočniki",
+      "zvocniki",
+      "speakers",
+      "speaker",
+      "glasneje",
+      "volume up",
+      "up",
+      "plus",
+      "brez napisa",
+      "stream deck"
+    ]
+  },
+  {
+    "path": "ch_speakers_down.png",
+    "name": "ZVOČNIKI -",
+    "tags": [
+      "mmix",
+      "kanal",
+      "channel",
+      "zvočniki",
+      "zvocniki",
+      "speakers",
+      "speaker",
+      "tišje",
+      "volume down",
+      "down",
+      "minus",
+      "stream deck"
+    ]
+  },
+  {
+    "path": "ch_speakers_down_clean.png",
+    "name": "ZVOČNIKI - (brez napisa)",
+    "tags": [
+      "mmix",
+      "kanal",
+      "channel",
+      "zvočniki",
+      "zvocniki",
+      "speakers",
+      "speaker",
+      "tišje",
+      "volume down",
+      "down",
+      "minus",
+      "brez napisa",
+      "stream deck"
+    ]
+  },
+  {
+    "path": "ch_speakers_mute.png",
+    "name": "ZVOČNIKI ×",
+    "tags": [
+      "mmix",
+      "kanal",
+      "channel",
+      "zvočniki",
+      "zvocniki",
+      "speakers",
+      "speaker",
+      "utišaj",
+      "mute",
+      "x",
+      "stream deck"
+    ]
+  },
+  {
+    "path": "ch_speakers_mute_clean.png",
+    "name": "ZVOČNIKI × (brez napisa)",
+    "tags": [
+      "mmix",
+      "kanal",
+      "channel",
+      "zvočniki",
+      "zvocniki",
+      "speakers",
+      "speaker",
+      "utišaj",
+      "mute",
+      "x",
+      "brez napisa",
+      "stream deck"
+    ]
+  },
+  {
+    "path": "ch_headphones_up.png",
+    "name": "SLUŠALKE +",
+    "tags": [
+      "mmix",
+      "kanal",
+      "channel",
+      "slušalke",
+      "slusalke",
+      "headphones",
+      "headset",
+      "glasneje",
+      "volume up",
+      "up",
+      "plus",
+      "stream deck"
+    ]
+  },
+  {
+    "path": "ch_headphones_up_clean.png",
+    "name": "SLUŠALKE + (brez napisa)",
+    "tags": [
+      "mmix",
+      "kanal",
+      "channel",
+      "slušalke",
+      "slusalke",
+      "headphones",
+      "headset",
+      "glasneje",
+      "volume up",
+      "up",
+      "plus",
+      "brez napisa",
+      "stream deck"
+    ]
+  },
+  {
+    "path": "ch_headphones_down.png",
+    "name": "SLUŠALKE -",
+    "tags": [
+      "mmix",
+      "kanal",
+      "channel",
+      "slušalke",
+      "slusalke",
+      "headphones",
+      "headset",
+      "tišje",
+      "volume down",
+      "down",
+      "minus",
+      "stream deck"
+    ]
+  },
+  {
+    "path": "ch_headphones_down_clean.png",
+    "name": "SLUŠALKE - (brez napisa)",
+    "tags": [
+      "mmix",
+      "kanal",
+      "channel",
+      "slušalke",
+      "slusalke",
+      "headphones",
+      "headset",
+      "tišje",
+      "volume down",
+      "down",
+      "minus",
+      "brez napisa",
+      "stream deck"
+    ]
+  },
+  {
+    "path": "ch_headphones_mute.png",
+    "name": "SLUŠALKE ×",
+    "tags": [
+      "mmix",
+      "kanal",
+      "channel",
+      "slušalke",
+      "slusalke",
+      "headphones",
+      "headset",
+      "utišaj",
+      "mute",
+      "x",
+      "stream deck"
+    ]
+  },
+  {
+    "path": "ch_headphones_mute_clean.png",
+    "name": "SLUŠALKE × (brez napisa)",
+    "tags": [
+      "mmix",
+      "kanal",
+      "channel",
+      "slušalke",
+      "slusalke",
+      "headphones",
+      "headset",
+      "utišaj",
+      "mute",
+      "x",
+      "brez napisa",
+      "stream deck"
+    ]
+  },
+  {
+    "path": "ch_monitor_up.png",
+    "name": "ZASLON +",
+    "tags": [
+      "mmix",
+      "kanal",
+      "channel",
+      "zaslon",
+      "monitor",
+      "display",
+      "hdmi",
+      "glasneje",
+      "volume up",
+      "up",
+      "plus",
+      "stream deck"
+    ]
+  },
+  {
+    "path": "ch_monitor_up_clean.png",
+    "name": "ZASLON + (brez napisa)",
+    "tags": [
+      "mmix",
+      "kanal",
+      "channel",
+      "zaslon",
+      "monitor",
+      "display",
+      "hdmi",
+      "glasneje",
+      "volume up",
+      "up",
+      "plus",
+      "brez napisa",
+      "stream deck"
+    ]
+  },
+  {
+    "path": "ch_monitor_down.png",
+    "name": "ZASLON -",
+    "tags": [
+      "mmix",
+      "kanal",
+      "channel",
+      "zaslon",
+      "monitor",
+      "display",
+      "hdmi",
+      "tišje",
+      "volume down",
+      "down",
+      "minus",
+      "stream deck"
+    ]
+  },
+  {
+    "path": "ch_monitor_down_clean.png",
+    "name": "ZASLON - (brez napisa)",
+    "tags": [
+      "mmix",
+      "kanal",
+      "channel",
+      "zaslon",
+      "monitor",
+      "display",
+      "hdmi",
+      "tišje",
+      "volume down",
+      "down",
+      "minus",
+      "brez napisa",
+      "stream deck"
+    ]
+  },
+  {
+    "path": "ch_monitor_mute.png",
+    "name": "ZASLON ×",
+    "tags": [
+      "mmix",
+      "kanal",
+      "channel",
+      "zaslon",
+      "monitor",
+      "display",
+      "hdmi",
+      "utišaj",
+      "mute",
+      "x",
+      "stream deck"
+    ]
+  },
+  {
+    "path": "ch_monitor_mute_clean.png",
+    "name": "ZASLON × (brez napisa)",
+    "tags": [
+      "mmix",
+      "kanal",
+      "channel",
+      "zaslon",
+      "monitor",
+      "display",
+      "hdmi",
+      "utišaj",
+      "mute",
+      "x",
+      "brez napisa",
+      "stream deck"
+    ]
+  },
+  {
+    "path": "device.png",
+    "name": "Naprava",
+    "tags": [
+      "mmix",
+      "naprava",
+      "izhod",
+      "device",
+      "stream deck"
+    ]
+  },
+  {
+    "path": "device_clean.png",
+    "name": "Naprava (brez napisa)",
+    "tags": [
+      "mmix",
+      "naprava",
+      "izhod",
+      "device",
+      "brez napisa",
+      "stream deck"
+    ]
+  },
+  {
+    "path": "refresh.png",
+    "name": "Osveži",
+    "tags": [
+      "mmix",
+      "osveži",
+      "refresh",
+      "naprave",
+      "stream deck"
+    ]
+  },
+  {
+    "path": "refresh_clean.png",
+    "name": "Osveži (brez napisa)",
+    "tags": [
+      "mmix",
+      "osveži",
+      "refresh",
+      "naprave",
+      "brez napisa",
+      "stream deck"
+    ]
+  },
+  {
+    "path": "apps.png",
+    "name": "Aplikacije",
+    "tags": [
+      "mmix",
+      "aplikacije",
+      "apps",
+      "usmerjanje",
+      "stream deck"
+    ]
+  },
+  {
+    "path": "apps_clean.png",
+    "name": "Aplikacije (brez napisa)",
+    "tags": [
+      "mmix",
+      "aplikacije",
+      "apps",
+      "usmerjanje",
+      "brez napisa",
+      "stream deck"
+    ]
+  },
+  {
+    "path": "open.png",
+    "name": "mmix",
+    "tags": [
+      "mmix",
+      "odpri",
+      "show",
+      "aplikacija",
+      "stream deck"
+    ]
+  },
+  {
+    "path": "open_clean.png",
+    "name": "mmix (brez napisa)",
+    "tags": [
+      "mmix",
+      "odpri",
+      "show",
+      "aplikacija",
+      "brez napisa",
+      "stream deck"
+    ]
+  },
+  {
+    "path": "blank.png",
+    "name": "Prazno",
+    "tags": [
+      "mmix",
+      "prazno",
+      "blank",
+      "ozadje",
+      "stream deck"
+    ]
+  },
+  {
+    "path": "blank_clean.png",
+    "name": "Prazno (brez napisa)",
+    "tags": [
+      "mmix",
+      "prazno",
+      "blank",
+      "ozadje",
+      "brez napisa",
+      "stream deck"
+    ]
+  }
+]

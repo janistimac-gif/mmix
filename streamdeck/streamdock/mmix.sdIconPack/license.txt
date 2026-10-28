@@ -1,0 +1,18 @@
+mmix · ikone za Stream Deck
+================================
+
+Ikone so del projekta mmix in so namenjene uporabi z aplikacijo mmix.
+Vse pravice pridrzane. Barve in oblike sledijo videzu mmix.
+
+Privzete globalne bliznjice v mmix:
+  Ctrl+Alt+Shift+Up     glasneje
+  Ctrl+Alt+Shift+Down   tisje
+  Ctrl+Alt+Shift+M      utisaj / vklopi zvok
+  Ctrl+Alt+Shift+O      prikazi mmix
+  Ctrl+Alt+Shift+R      osvezi naprave
+
+Kanalske bliznjice (mmix > Bliznjice > Kanali):
+  Za vsak kanal (MASTER, zvocniki, slusalke, zaslon ...) nastavis svoje
+  tri kombinacije: glasneje, tisje in utisaj. Vsaki tipki na Stream
+  Controllerju dodelis svojo kombinacijo, ikona pa pove, kateri kanal
+  in katero dejanje tipka upravlja.

@@ -5,7 +5,7 @@
 ; ------------------------------------------------------------------
 
 #define MyAppName        "mmix"
-#define MyAppVersion     "1.3.0"
+#define MyAppVersion     "1.5.0"
 #define MyAppPublisher   "JBJ"
 #define MyAppExeName     "mmix.exe"
 ; Fiksni AppId – omogoča nadgradnjo brez podvojenih vnosov v "Programi".

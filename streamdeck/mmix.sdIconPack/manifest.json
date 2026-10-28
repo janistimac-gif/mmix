@@ -1,0 +1,8 @@
+{
+  "Name": "mmix",
+  "Version": "1.5.0",
+  "Description": "Ikone za nadzor glasnosti mmix: glasneje, tišje, utišaj, master, kanali (zvočniki, slušalke, zaslon), naprave in osvežitev.",
+  "Author": "JBJ",
+  "Icon": "icon.png",
+  "License": "license.txt"
+}
