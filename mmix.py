@@ -496,7 +496,7 @@ def _pill(size_w, size_h, radius):
 
 DIM = {c: mix(c, TRACK, 0.62) for c in (GREEN, YELLOW, RED)}
 
-METER_INTERVAL_MS = 80
+METER_INTERVAL_MS = 150
 USE_NEON_FRAME = False
 ANIMATE_FRAME = False
 HOLD_FALL = 1.0
@@ -2047,7 +2047,7 @@ class DeviceColumn(tk.Frame):
         self.mute_btn = MuteButton(self, self.on_mute, active=not self.muted)
         self.mute_btn.pack(pady=(2, 2))
         # Kaj trenutno predvaja na tej napravi (največ dve vrstici).
-        self.apps_lbl = tk.Label(self, text='', bg=CARD, fg=SUBTEXT2, font=F(8),
+        self.apps_lbl = tk.Label(self, text='', bg=CARD, fg=SUBTEXT, font=F(8),
                                  justify='center', wraplength=84, height=2)
         self.apps_lbl.pack(side='bottom', pady=(0, 1))
         self.set_apps([])
