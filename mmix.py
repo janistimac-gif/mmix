@@ -2302,7 +2302,7 @@ class DeviceColumn(tk.Frame):
         try:
             volume = self.vol.GetMasterVolumeLevelScalar() * 100
             muted = bool(self.vol.GetMute())
-            changed = abs(volume - self.volume) > 0.05 or muted != self.muted
+            changed = abs(volume - self.volume) > 0.5 or muted != self.muted
             self.volume = volume
             if muted != self.muted:
                 self.muted = muted

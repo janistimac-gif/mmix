@@ -45,6 +45,20 @@ ohranijo).
 | 🔄 **Osveži naprave** | Znova prebere seznam naprav (npr. po priklopu USB slušalk) – brez podvajanja kartic. |
 | 🎨 **Temna tema** | Lasten videz: zaobljene kartice, kovinski pravokotni drsniki, mehki prelivi, anti-aliasing prek Pillow. |
 | ⌨️ **Globalne bližnjice** | Glasneje, tišje, utišaj, prikaži mmix in osveži naprave delujejo tudi, ko je mmix v ozadju; kombinacije se urejajo v oknu **Bližnjice**. |
+| 🪟 **Adaptivno okno** | Okno je široko in visoko in se lahko raztega; kartice z drsniki se prerazporedijo v več vrstic glede na širino okna. |
+
+### Prilagoditev velikosti okna
+
+Okno je odprto in široko, zato se pri odprti **prilagoditev na podlagi velikosti okna** izvede tako:
+
+- **Širina okna:** koliko kartic z drsniki se vnaša v eno vrstico, odloča
+  širina okna – ob ~450 px širine okna drsniki prevladajo v več vrstic, ob
+  širšem se vrneta v eno vrstico. Vse kartice se izpustijo iz zbirke in vsebina
+  se shranja na posamezne naprave.
+- **Višina okna:** drsnik (sled + knob) se **prilagaja velikosti okna**. Prosto
+  višino okna porazdeli med vrstice, kartice pa se raztegnejo ali skrčijo skupaj
+  z oknom. Pri ozkem oknu drsnik zatreja do minimalne višine, pri večjem pa
+  raste (razpon 80–440 px).
 
 ### Upravljanje
 
