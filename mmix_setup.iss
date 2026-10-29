@@ -1,11 +1,11 @@
-; ------------------------------------------------------------------
+﻿; ------------------------------------------------------------------
 ;  mmix – namestitveni program (Inno Setup 6)
 ;  Zgradi:  ISCC.exe mmix_setup.iss
 ;  Rezultat: mmix_setup.exe (v isti mapi)
 ; ------------------------------------------------------------------
 
 #define MyAppName        "mmix"
-#define MyAppVersion     "1.5.0"
+#define MyAppVersion     "1.5.1"
 #define MyAppPublisher   "JBJ"
 #define MyAppExeName     "mmix.exe"
 ; Fiksni AppId – omogoča nadgradnjo brez podvojenih vnosov v "Programi".
@@ -61,3 +61,4 @@ Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#MyAppName}}
 
 [UninstallDelete]
 Type: filesandordirs; Name: "{app}"
+

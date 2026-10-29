@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """Build the mmix Stream Controller plugin (manifest + helper files).
 
 Writes to %APPDATA%\\HotSpot\\StreamDock\\plugins\\com.jbj.mmix.sdPlugin
@@ -79,7 +79,7 @@ def build_manifest() -> dict:
         "SDKVersion": 1,
         "Name": "mmix",
         "Author": "JBJ",
-        "Version": "1.5.0",
+        "Version": "1.5.1",
         "Description": "Nadzor glasnosti mmix neposredno iz Stream Controllerja.",
         "Category": "mmix",
         "CategoryIcon": "icon/category",
@@ -145,19 +145,40 @@ function mmixLog(text) {
   if (el) el.textContent = text;
 }
 
+function mmixSend(payload) {
+  try {
+    if (websocket && websocket.readyState === 1) {
+      websocket.send(JSON.stringify(payload));
+    }
+  } catch (e) {}
+}
+
 /* Sproži dejanje v mmixu.
 
-   Uporabimo "<img>" namesto fetch(): stran teče iz file://, zato bi fetch
-   lahko ustavila CORS/preverjanje vsebine. Zahteva po sliki gre vedno skozi,
-   vračilo pa nas ne zanima. */
-function mmixFire(target, kind) {
+   Most vrne 200, ko ukaz sprejme; takrat na tipki pokažemo zeleno kljukico,
+   ob napaki pa rdeč klicaj. Tako je takoj vidno, ali je tipka kaj naredila —
+   tudi kadar je glasnost že na 100 % in se dejansko ne more dvigniti. */
+function mmixFire(target, kind, context) {
   var url = kind
     ? MMIX_BRIDGE + "?target=" + encodeURIComponent(target) +
       "&kind=" + encodeURIComponent(kind)
     : MMIX_BRIDGE + "?name=" + encodeURIComponent(target);
+  mmixLog("mmix: " + target + (kind ? " / " + kind : ""));
+
+  var done = function (ok) {
+    mmixSend({ event: ok ? "showOk" : "showAlert", context: context });
+  };
+
+  if (typeof fetch === "function") {
+    fetch(url + "&_=" + Date.now(), { cache: "no-store" })
+      .then(function (r) { done(r.ok); })
+      .catch(function () { done(false); });
+    return;
+  }
+
+  /* rezerva za pogled brez fetch(): zahteva po sliki gre vedno skozi */
   var beacon = new Image();
   beacon.src = url + "&_=" + Date.now();
-  mmixLog("mmix: " + target + (kind ? " / " + kind : ""));
 }
 
 window.connectElgatoStreamDeckSocket = function (port, uuid, registerEvent) {
@@ -182,7 +203,7 @@ window.connectElgatoStreamDeckSocket = function (port, uuid, registerEvent) {
     var key = MMIX_KEYS[msg.action];
     if (!key) return;
     if (msg.event === "keyDown") {
-      mmixFire(key[0], key[1]);
+      mmixFire(key[0], key[1], msg.context);
     }
   };
 };
@@ -233,3 +254,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+

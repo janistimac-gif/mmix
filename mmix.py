@@ -496,7 +496,7 @@ def _pill(size_w, size_h, radius):
 
 DIM = {c: mix(c, TRACK, 0.62) for c in (GREEN, YELLOW, RED)}
 
-METER_INTERVAL_MS = 40
+METER_INTERVAL_MS = 80
 USE_NEON_FRAME = False
 ANIMATE_FRAME = False
 HOLD_FALL = 1.0
@@ -2219,14 +2219,17 @@ class DeviceColumn(tk.Frame):
         self.name_lbl.pack(side='left')
         self.edit_icon.pack(side='left', padx=(4, 0))
 
-    def set_volume(self, pct):
-        self.volume = max(0.0, min(100.0, pct))
+    def set_volume(self, pct, notify=True):
+        new = max(0.0, min(100.0, pct))
+        if abs(new - self.volume) < 0.001:
+            return
+        self.volume = new
         try:
             self.vol.SetMasterVolumeLevelScalar(self.volume / 100, None)
         except Exception:
             pass
         self.draw()
-        if self.on_change:
+        if notify and self.on_change:
             self.on_change(self)
 
     def ensure_unmuted(self):
@@ -2244,16 +2247,18 @@ class DeviceColumn(tk.Frame):
         begin = getattr(self.vol, 'begin_drag', None)
         if begin:
             begin()
-        self.set_volume(self.pct_of(e.y))
+        self.set_volume(self.pct_of(e.y), notify=False)
 
     def on_drag(self, e):
-        self.set_volume(self.pct_of(e.y))
+        self.set_volume(self.pct_of(e.y), notify=False)
 
     def on_release(self, _):
         self.dragging = False
         end = getattr(self.vol, 'end_drag', None)
         if end:
             end()
+        if self.on_change:
+            self.on_change(self)
 
     def on_wheel(self, e):
         begin = getattr(self.vol, 'begin_drag', None)
@@ -2993,6 +2998,30 @@ class App(tk.Tk):
                 return c
         return None
 
+    def step_master(self, delta):
+        """Korak glasnosti po vseh izhodih — absolutno, ne sorazmerno.
+
+        Sorazmerni model (GroupVolume) pri 100 % najglasnejše naprave ne more
+        več dvigniti ničesar, zato bi tipka "glasneje" delovala mrtvo. Tu zato
+        vsaki izhodni napravi prištejemo enak odstotek.
+        """
+        outputs = [c for c in self.columns
+                   if c.direction == 'Izhod'
+                   and not getattr(c, 'is_master', False)]
+        for c in outputs:
+            c.refresh()
+            if delta > 0:
+                c.ensure_unmuted()
+            c.set_volume(c.volume + delta, notify=False)
+        master = self.master_column()
+        if master is not None:
+            master.refresh()
+        # Eno osvežitev ostalih (ne N^2)
+        for c in self.columns:
+            if c is not master and not getattr(c, 'dragging', False):
+                c.refresh()
+        return master
+
     def run_hotkey(self, action):
         if action == 'show':
             self.show_window()
@@ -3008,13 +3037,11 @@ class App(tk.Tk):
         if col is None:
             return
         if action in ('volume_up', 'volume_down'):
-            col.refresh()
             step = (HOTKEY_VOLUME_STEP if action == 'volume_up'
                     else -HOTKEY_VOLUME_STEP)
-            if step > 0:
-                col.ensure_unmuted()
-            col.set_volume(col.volume + step)
-            self.osd.show(col.volume, col.muted, 'MASTER')
+            col = self.step_master(step)
+            if col is not None:
+                self.osd.show(col.volume, col.muted, 'MASTER')
         elif action == 'mute':
             col.refresh()
             col.on_mute()
@@ -3096,13 +3123,22 @@ class App(tk.Tk):
         col = self.channel_column(target)
         if col is None:
             return
-        col.refresh()
+        is_master = getattr(col, 'is_master', False)
         if kind == 'up':
-            col.ensure_unmuted()
-            col.set_volume(col.volume + HOTKEY_VOLUME_STEP)
+            if is_master:
+                col = self.step_master(HOTKEY_VOLUME_STEP) or col
+            else:
+                col.refresh()
+                col.ensure_unmuted()
+                col.set_volume(col.volume + HOTKEY_VOLUME_STEP)
         elif kind == 'down':
-            col.set_volume(col.volume - HOTKEY_VOLUME_STEP)
+            if is_master:
+                col = self.step_master(-HOTKEY_VOLUME_STEP) or col
+            else:
+                col.refresh()
+                col.set_volume(col.volume - HOTKEY_VOLUME_STEP)
         elif kind == 'mute':
+            col.refresh()
             col.on_mute()
         else:
             return
@@ -3167,11 +3203,15 @@ class App(tk.Tk):
             while True:
                 kind, payload = self.hotkey_queue.get_nowait()
                 if kind == 'action':
-                    self.run_hotkey(payload)
+                    try:
+                        self.run_hotkey(payload)
+                    except Exception:
+                        pass
         except queue.Empty:
             pass
-        if not getattr(self, '_closing', False):
-            self.after(80, self.poll_hotkeys)
+        finally:
+            if not getattr(self, '_closing', False):
+                self.after(80, self.poll_hotkeys)
 
     def start_bridge(self):
         """Zažene lokalni most, prek katerega upravlja Stream Controller."""
@@ -3391,8 +3431,9 @@ class App(tk.Tk):
         # Popravek z dejansko merjeno višino vsebine (odpravi odmik med
         # oceno in dejanskim izrisom, ne zažene pa povratne zanke).
         err = self.content.winfo_reqheight() - client_h
-        if (abs(err) > 2 and MIN_TRACK < track < MAX_TRACK):
-            track = max(MIN_TRACK, min(MAX_TRACK, track - (err + (1 if err > 0 else -1) * 0) // rows))
+        if abs(err) > 2 and MIN_TRACK < track < MAX_TRACK:
+            # vsebina je predvsem višja (err > 0) kot okno, zato sled umaknemo
+            track = max(MIN_TRACK, min(MAX_TRACK, track - err // rows))
             self._apply_track_h(track)
         # najmanjša višina okna: enaka razporeditev, le da smejo sledi pasti
         # na MIN_TRACK, kadar uporabnik okno še dodatno skrči
